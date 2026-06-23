@@ -1,14 +1,144 @@
-export interface MedicalSet {
-  id: string;
-  name: string;
-  location: string;
-  deliveryDate: string;
-  loanType: string;
-  deliveryNote: string;
-}
+
 
 export interface EmailPayload {
   to: string;
   subject: string;
   html: string;
+}
+
+// app/types/inventory.ts
+
+export interface Sets {
+  SetID: string;
+  SetName: string;
+  Location: string;
+  DeliveryDate?: string;
+  LoanType?: string;
+  DeliveryNote?: string;
+  SystemStatus?: string;
+  Notes?: string;
+  // Dynamic client indicators
+  SetStatus?: string;
+  "Current Location"?: string;
+  "Set Complete?"?: string;
+}
+
+export interface Trays {
+  _RowNumber?: number;
+  TrayID: string;
+  SetID: string;
+  TrayName: string;
+  TrayType: string;
+  Status?: string;
+  Photo?: string;
+  Notes?: string;
+  TrayStatus?: string;
+}
+
+export interface TraysContent {
+  ItemID: string;
+  TrayID: string;
+  PartNumber: string;
+  Description: string;
+  LotNumber: string;
+  IdealQty: number;
+  ActualQty?: number;
+  ItemType: string;
+  Notes?: string;
+  "Current Qty"?: number;
+  Restock?: number;
+}
+
+export interface Bookings {
+  BookingID: string;
+  Salesperson: string;
+  Hospital: string;
+  Doctor: string;
+  CaseDate: string;
+  CaseTime: string;
+  "Deliver Before"?: string;
+  "Special Request"?: string;
+  Status: string;
+  "Requested Sets": string;
+  "Selected Sets"?: string;
+  "Last Updated": string;
+  Driver?: string;
+  UsagePhoto?: string;
+  UsagePhoto2?: string;
+  "Patient MRN"?: string;
+  "Delivery Note"?: string;
+  "Delivery Note Link"?: string;
+  "Sales Email"?: string;
+  CaseDay?: string;
+}
+
+export interface BookingSets {
+  BookingSetID: string;
+  BookingID: string;
+  SetID: string;
+  photo1?: string;
+  photo2?: string;
+  photo3?: string;
+  photo4?: string;
+  photo5?: string;
+  photo6?: string;
+  photo7?: string;
+  "Photo Confirmation": string;
+  "Delivery Note"?: string;
+  BookingStatus?: string;
+  "Set Name"?: string;
+}
+
+export interface Usage {
+  UsageID: string;
+  BookingID: string;
+  SetID: string;
+  TrayID: string;
+  PartNumber: string;
+  LotID?: string;
+  QtyUsed: number;
+  PatientMRN: string;
+  Date: string;
+  Hospital: string;
+  "Qty Refilled": number;
+  Notes?: string;
+  Photo?: string;
+  ItemID: string;
+  "Last Update": string;
+  "Set Delivery Note"?: string;
+  "Refill Delivery Note"?: string;
+  "Usage Status"?: string;
+  Description?: string;
+}
+
+export interface UsagePhotos {
+  _RowNumber?: number;
+  MRN: string;
+  Photo: string;
+  BookingID: string;
+  Date?: string;
+  "Usage Ids"?: string;
+  "Usage Total"?: number;
+}
+
+export interface Stock {
+  "Scanned Barcode"?: string;
+  GTIN: string;
+  "Batch/Lot": string;
+  "Item Code": string;
+  Qty: number;
+  "Expiry Date"?: string;
+  Location: string;
+}
+
+export interface PartsMaster {
+  PartNumber: string;
+  "Master SKU": string;
+  Description: string;
+  Type: string;
+  Kind: string;
+  PU: string;
+  Image?: string;
+  "Refill Stock"?: number;
+  Usages?: number;
 }

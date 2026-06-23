@@ -1,42 +1,68 @@
+// app/lib/google-sheets.ts
 import { google } from 'googleapis';
-import { MedicalSet } from '../types/interfaces';
+import { Sets, Bookings, Trays, Usage } from '../types/interfaces';
 
-export async function getSetsData(): Promise<MedicalSet[]> {
+const auth = new google.auth.JWT({
+  email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+  key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+  scopes: ['https://www.googleapis.com/auth/spreadsheets']
+});
+
+const sheets = google.sheets({ version: 'v4', auth });
+const SPREADSHEET_ID = process.env.GOOGLE_SPREADSHEET_ID;
+
+// Reusable low-level matrix reader
+async function getSheetRows(tabName: string): Promise<any[][]> {
   try {
-    const auth = new google.auth.GoogleAuth({
-      credentials: {
-        client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-        private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-      },
-      scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
-    });
-
-    const sheets = google.sheets({ version: 'v4', auth });
-    
-    // We explicitly call the "Sets" sheet tab from your workbook
     const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.GOOGLE_SPREADSHEET_ID,
-      range: 'Sets!A1:F100', 
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${tabName}!A1:Z`,
     });
-
-    const rows = response.data.values;
-    if (!rows || rows.length === 0) return [];
-
-    // Extract the headers from the very first row
-    // Row 0: ["SetID", "SetName", "Location", "DeliveryDate", "LoanType", "DeliveryNote"]
-    const dataRows = rows.slice(1);
-
-    // Turn arrays into nice structured JSON objects
-    return dataRows.map((row) => ({
-      id: row[0] || '',
-      name: row[1] || '',
-      location: row[2] || 'UNKNOWN',
-      deliveryDate: row[3] || '',
-      loanType: row[4] || '',
-      deliveryNote: row[5] || '',
-    }));
+    return response.data.values || [];
   } catch (error) {
-    console.error("Error fetching data from Google Sheets:", error);
+    console.error(`Error loading table tab [${tabName}]:`, error);
     return [];
   }
+}
+
+// Generic mapper keeping spaces intact
+function mapRowsToInterface<T>(headers: string[], dataRows: any[][]): T[] {
+  return dataRows.map((row) => {
+    const item: any = {};
+    headers.forEach((header, index) => {
+      // Maps column values directly using exact string keys (e.g. item["Patient MRN"])
+      item[header] = row[index] !== undefined ? row[index] : '';
+    });
+    return item as T;
+  });
+}
+
+// --- TARGET TAB GETTERS ---
+
+export async function getSets(): Promise<Sets[]> {
+  const rows = await getSheetRows('Sets');
+  if (rows.length < 2) return [];
+  const [headers, ...dataRows] = rows;
+  return mapRowsToInterface<Sets>(headers, dataRows);
+}
+
+export async function getBookings(): Promise<Bookings[]> {
+  const rows = await getSheetRows('Bookings');
+  if (rows.length < 2) return [];
+  const [headers, ...dataRows] = rows;
+  return mapRowsToInterface<Bookings>(headers, dataRows);
+}
+
+export async function getTrays(): Promise<Trays[]> {
+  const rows = await getSheetRows('Trays');
+  if (rows.length < 2) return [];
+  const [headers, ...dataRows] = rows;
+  return mapRowsToInterface<Trays>(headers, dataRows);
+}
+
+export async function getUsage(): Promise<Usage[]> {
+  const rows = await getSheetRows('Usage');
+  if (rows.length < 2) return [];
+  const [headers, ...dataRows] = rows;
+  return mapRowsToInterface<Usage>(headers, dataRows);
 }

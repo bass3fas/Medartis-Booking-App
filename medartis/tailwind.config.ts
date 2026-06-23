@@ -11,7 +11,6 @@ module.exports = {
   plugins: [require("daisyui")],
   // DaisyUI configuration
   daisyui: {
-    themes: ["light", "dark", "corporate"], // We can set our professional theme here
-    darkTheme: "dark",
+  themes: ["corporate", "business", "emerald"],
   },
 };

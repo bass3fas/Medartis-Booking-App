@@ -1,8 +1,8 @@
-import { getSetsData } from './lib/google-sheets';
+import { getSets } from './lib/google-sheets';
 
 export default async function Home() {
   // Fetching data cleanly on the server side
-  const medicalSets = await getSetsData();
+  const medicalSets = await getSets();
 
   return (
     <div className="min-h-screen bg-zinc-50 p-8 font-sans dark:bg-black text-zinc-900 dark:text-zinc-100">
@@ -30,30 +30,30 @@ export default async function Home() {
           <div className="grid gap-3 sm:grid-cols-2">
             {medicalSets.map((set) => (
               <div 
-                key={set.id} 
+                key={set.SetID} 
                 className="p-4 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-sm flex flex-col justify-between"
               >
                 <div>
                   <div className="flex items-center justify-between gap-2 mb-1">
                     <span className="text-xs font-mono font-semibold px-2 py-0.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 rounded">
-                      {set.id}
+                      {set.SetID}
                     </span>
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                      set.location === 'WAREHOUSE' 
+                      set.Location === 'WAREHOUSE' 
                         ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400' 
                         : 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400'
                     }`}>
-                      {set.location}
+                      {set.Location}
                     </span>
                   </div>
                   <h2 className="text-base font-semibold tracking-tight text-zinc-900 dark:text-white">
-                    {set.name}
+                    {set.SetName}
                   </h2>
                 </div>
 
-                {set.deliveryNote && (
+                {set.DeliveryNote && (
                   <p className="text-xs text-zinc-400 mt-3 border-t border-zinc-100 dark:border-zinc-800 pt-2 font-mono">
-                    Note: {set.deliveryNote}
+                    Note: {set.DeliveryNote}
                   </p>
                 )}
               </div>
