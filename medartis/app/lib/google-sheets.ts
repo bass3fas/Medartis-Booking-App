@@ -1,13 +1,5 @@
 import { google } from 'googleapis';
-
-export interface MedicalSet {
-  id: string;
-  name: string;
-  location: string;
-  deliveryDate: string;
-  loanType: string;
-  deliveryNote: string;
-}
+import { MedicalSet } from '../types/interfaces';
 
 export async function getSetsData(): Promise<MedicalSet[]> {
   try {
