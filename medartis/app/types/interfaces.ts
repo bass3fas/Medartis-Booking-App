@@ -15,7 +15,7 @@ export interface Sets {
   DeliveryDate?: string;
   LoanType?: string;
   DeliveryNote?: string;
-  SystemStatus?: string;
+  //SystemStatus?: string;
   Notes?: string;
   // Dynamic client indicators
   SetStatus?: string;

@@ -21,7 +21,7 @@ export default function RootLayout({
 
           <div className="flex flex-col md:flex-row min-h-screen">
             <SidebarNav />
-            <div className="flex-1 pb-20 md:pb-0 md:pl-0">
+            <div className="flex-1 pb-20 md:pb-0 md:pl-68">
               {children}
             </div>
           </div>
