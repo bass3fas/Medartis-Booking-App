@@ -45,11 +45,11 @@ export default function WelcomeScreen() {
   }, []);
 
   const handleAuthSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
+  e.preventDefault();
+  setLoading(true);
+  setError('');
 
-    const result = await handleDatabaseAuth({
+  const result = await handleDatabaseAuth({
       action: isSignUp ? 'signup' : 'signin',
       email,
       password,
@@ -57,25 +57,27 @@ export default function WelcomeScreen() {
     });
 
     if (result.success) {
-      const expiryTime = Date.now() + 7 * 24 * 60 * 60 * 1000;
-      localStorage.setItem(
-        'medartis_session_token', 
-        JSON.stringify({ 
-          user: result.user?.email, 
-          name: result.user?.name, 
-          role: result.user?.role, // Stores 'Admin', 'Warehouse', 'Sales' or 'operator'
-          expiresAt: expiryTime 
-        })
-      );
-      
-      setUserRole(result.user?.role || 'operator');
+    const expiryTime = Date.now() + 7 * 24 * 60 * 60 * 1000;
+    
+    localStorage.setItem(
+      'medartis_session_token', 
+      JSON.stringify({ 
+        user: result.user?.email, 
+        name: result.user?.name, 
+        role: result.user?.role, 
+        expiresAt: expiryTime 
+      })
+    );
 
-      // 🚨 Security Checkpoint: Only dismiss screen if role isn't 'operator'
-      if (result.user?.role && result.user?.role !== 'operator') {
-        setIsAuthenticated(true);
-      }
-      
-      setPassword('');
+    // 📢 Broadcast that a user successfully logged in!
+    window.dispatchEvent(new Event('app-signin')); 
+
+    setUserRole(result.user?.role || 'operator');
+    if (result.user?.role && result.user?.role !== 'operator') {
+      setIsAuthenticated(true);
+    }
+    setPassword('');
+
     } else {
       setError(result.error || 'Authentication failed.');
     }

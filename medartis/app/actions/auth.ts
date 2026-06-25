@@ -5,7 +5,7 @@ import { prisma } from '@/app/lib/db';
 import bcrypt from 'bcryptjs';
 
 export async function handleDatabaseAuth(formData: any) {
-  const { action, email, password, name, role } = formData;
+  const { action, email, password, name } = formData;
 
   try {
     if (action === 'signup') {
@@ -54,9 +54,14 @@ export async function handleDatabaseAuth(formData: any) {
         return { success: false, error: 'Invalid email or password.' };
       }
 
+      // 3. Return the full verified user details securely
       return { 
         success: true, 
-        user: { email: user.email, name: user.name, role: user.role } 
+        user: { 
+          email: user.email, 
+          name: user.name || 'Staff Member', 
+          role: user.role 
+        } 
       };
     }
 
