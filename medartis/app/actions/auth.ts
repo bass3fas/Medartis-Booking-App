@@ -5,7 +5,7 @@ import { prisma } from '@/app/lib/db';
 import bcrypt from 'bcryptjs';
 
 export async function handleDatabaseAuth(formData: any) {
-  const { action, email, password, name } = formData;
+  const { action, email, password, name, role } = formData;
 
   try {
     if (action === 'signup') {
@@ -34,7 +34,7 @@ export async function handleDatabaseAuth(formData: any) {
       // Return user data (excluding password)
       return { 
         success: true, 
-        user: { email: newUser.email, name: newUser.name } 
+        user: { email: newUser.email, name: newUser.name, role: newUser.role } 
       };
 
     } else if (action === 'signin') {
@@ -56,7 +56,7 @@ export async function handleDatabaseAuth(formData: any) {
 
       return { 
         success: true, 
-        user: { email: user.email, name: user.name } 
+        user: { email: user.email, name: user.name, role: user.role } 
       };
     }
 
