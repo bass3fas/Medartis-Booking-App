@@ -11,23 +11,23 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return (
-    <html lang="en" data-theme="light">
-      <body className="antialiased bg-base-200 min-h-screen text-base-content">
-        <PWA /> 
-        
-        {/* 🔐 Full-screen security block layer wrapper */}
-        <WelcomeScreen />
+    return (
+      <html lang="en" data-theme="light">
+        <body className="antialiased bg-base-200 min-h-screen text-base-content">
+          <PWA /> 
+          
+          {/* 🔐 Full-screen security block layer wrapper */}
+          <WelcomeScreen />
 
-        <div className="flex flex-col md:flex-row min-h-screen">
-          <SidebarNav />
-          <div className="flex-1 pb-20 md:pb-0 md:pl-64">
-            {children}
+          <div className="flex flex-col md:flex-row min-h-screen">
+            <SidebarNav />
+            <div className="flex-1 pb-20 md:pb-0 md:pl-0">
+              {children}
+            </div>
           </div>
-        </div>
 
-        <BottomNav />
-      </body>
-    </html>
-  );
+          <BottomNav />
+        </body>
+      </html>
+    );
 }
