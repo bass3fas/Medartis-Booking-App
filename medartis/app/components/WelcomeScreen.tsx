@@ -1,10 +1,14 @@
+// app/components/WelcomeScreen.tsx
 'use client';
 
 import { useState, useEffect } from 'react';
+import { handleDatabaseAuth } from '../actions/auth'; // 👈 Import the real database action
 
 export default function WelcomeScreen() {
   const [isMounted, setIsMounted] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -12,7 +16,6 @@ export default function WelcomeScreen() {
 
   useEffect(() => {
     setIsMounted(true);
-    // Read local storage to determine if an active session is still valid
     const sessionToken = localStorage.getItem('medartis_session_token');
     if (sessionToken) {
       try {
@@ -20,59 +23,82 @@ export default function WelcomeScreen() {
         if (Date.now() < session.expiresAt) {
           setIsAuthenticated(true);
         } else {
-          localStorage.removeItem('medartis_session_token'); // Clear expired token
+          localStorage.removeItem('medartis_session_token');
         }
-      } catch (e) {
+      } catch {
         localStorage.removeItem('medartis_session_token');
       }
     }
+
+    const handleSignOutEvent = () => setIsAuthenticated(false);
+    window.addEventListener('app-signout', handleSignOutEvent);
+    return () => window.removeEventListener('app-signout', handleSignOutEvent);
   }, []);
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
 
-    // Temporary validation logic (We will replace this with a secure API hash route)
-    setTimeout(() => {
-      if (email.endsWith('@gmail.com') && password.length >= 6) {
-        const expiryTime = Date.now() + 7 * 24 * 60 * 60 * 1000; // 7 Days duration limit
-        localStorage.setItem(
-          'medartis_session_token', 
-          JSON.stringify({ user: email, expiresAt: expiryTime })
-        );
-        setIsAuthenticated(true);
-      } else {
-        setError('Invalid coordinate email access signature or password too short.');
-      }
-      setLoading(false);
-    }, 1200);
+    // Call the real database Server Action
+    const result = await handleDatabaseAuth({
+      action: isSignUp ? 'signup' : 'signin',
+      email,
+      password,
+      name
+    });
+
+    if (result.success) {
+      // Create a 7-day session token locally upon successful DB validation
+      const expiryTime = Date.now() + 7 * 24 * 60 * 60 * 1000;
+      localStorage.setItem(
+        'medartis_session_token', 
+        JSON.stringify({ user: result.user?.email, name: result.user?.name, expiresAt: expiryTime })
+      );
+      setIsAuthenticated(true);
+      // Reset fields
+      setPassword('');
+    } else {
+      setError(result.error || 'Authentication failed.');
+    }
+    setLoading(false);
   };
 
-  // Prevent layout shifts during structural mounting hydrations
-  if (!isMounted) return null;
-
-  // If authenticated cleanly, hide the login screen completely
-  if (isAuthenticated) return null;
+  if (!isMounted || isAuthenticated) return null;
 
   return (
-    /* fixed inset-0 z-[100]: Overlays everything on the phone/desktop glass workspace completely */
-    <div className="fixed inset-0 z-[100] bg-gradient-to-br from-primary to-secondary text-primary-content flex flex-col items-center justify-center p-6 animate-fade-in">
-      
+    <div className="fixed inset-0 z-[100] bg-gradient-to-br from-primary to-secondary text-primary-content flex flex-col items-center justify-center p-6">
       <div className="card w-full max-w-md bg-base-100 text-base-content shadow-2xl p-8 border border-base-300">
         <div className="card-body p-0 items-center text-center">
           
-          {/* Medical Identity Token Stamp */}
-          <div className="w-16 h-16 rounded-2xl bg-primary text-primary-content flex items-center justify-center font-black text-2xl shadow-md mb-2">
+          <div className="w-14 h-14 rounded-2xl bg-primary text-primary-content flex items-center justify-center font-black text-2xl shadow-sm mb-2">
             M
           </div>
           
-          <h1 className="text-2xl font-black tracking-tight text-base-content">Medartis Hub</h1>
-          <p className="text-xs opacity-60 font-mono uppercase tracking-widest mb-6">Logistics Verification Engine</p>
+          <h1 className="text-xl font-black tracking-tight">
+            {isSignUp ? 'Create Operator Account' : 'Initialize Session'}
+          </h1>
+          <p className="text-[10px] font-mono tracking-wider opacity-50 uppercase mb-6">
+            {isSignUp ? 'Register to Postgres DB' : 'Logistics Verification Portal'}
+          </p>
 
-          <form onSubmit={handleLogin} className="form-control w-full gap-4 text-left">
+          <form onSubmit={handleAuthSubmit} className="form-control w-full gap-3 text-left">
+            {isSignUp && (
+              <div>
+                <label className="label-text font-bold text-xs px-1 block mb-1">Full Name</label>
+                <input 
+                  type="text" 
+                  placeholder="Alex Carter" 
+                  className="input input-bordered w-full text-sm font-semibold"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                />
+              </div>
+            )}
+
             <div>
-              <label className="label-text font-bold text-xs px-1 block mb-1">Operator Email Address</label>
+              <label className="label-text font-bold text-xs px-1 block mb-1">Operator Email</label>
               <input 
                 type="email" 
                 placeholder="operator@company.com" 
@@ -96,24 +122,25 @@ export default function WelcomeScreen() {
             </div>
 
             {error && (
-              <div className="alert alert-error text-xs py-2 px-3 font-semibold text-error-content mt-1">
+              <div className="alert alert-error text-xs py-2 px-3 font-semibold mt-1 text-error-content">
                 <span>{error}</span>
               </div>
             )}
 
-            <button 
-              type="submit" 
-              className={`btn btn-primary w-full mt-4 font-bold ${loading ? 'loading' : ''}`}
-              disabled={loading}
-            >
-              {loading ? 'Authenticating Token...' : 'Initialize Secure Session'}
+            <button type="submit" className="btn btn-primary w-full mt-2 font-bold" disabled={loading}>
+              {loading ? 'Connecting to Database...' : isSignUp ? 'Register Account' : 'Sign In'}
             </button>
           </form>
 
-          <div className="mt-6 border-t border-base-200 pt-4 w-full text-center">
-            <span className="text-[10px] font-mono tracking-wider opacity-40 uppercase block">
-              Protected Medical Logistics Matrix
-            </span>
+          <div className="mt-4 text-xs">
+            <span className="opacity-60">{isSignUp ? 'Already have an account? ' : "New operator? "}</span>
+            <button 
+              type="button" 
+              className="link link-primary font-bold" 
+              onClick={() => { setIsSignUp(!isSignUp); setError(''); }}
+            >
+              {isSignUp ? 'Sign In here' : 'Sign Up here'}
+            </button>
           </div>
 
         </div>
