@@ -2,11 +2,20 @@
 'use server';
 
 import { google } from 'googleapis';
-import { PartsMaster, TraysContent, Usage } from '../types/interfaces';
+import { PartsMaster, TraysContent, Usage, Trays } from '../types/interfaces';
+
+export interface PartAllocationRef {
+  SetID: string;
+  TrayID: string;
+  TrayName: string;
+  CurrentQty: number;
+}
 
 export interface VirtualPartsMaster extends PartsMaster {
-  inSetsQty: number; // 🌟 Restored: Counts items matching PartNumber OR Master SKU
-  rowIndex: string;  
+  inSetsQty: number;
+  rowIndex: string;
+  allocations: PartAllocationRef[];
+  history: Usage[];
 }
 
 async function getSheetRows(rangeName: string): Promise<any[]> {
@@ -25,10 +34,11 @@ async function getSheetRows(rangeName: string): Promise<any[]> {
 
 export async function fetchPartsCatalogue(): Promise<{ success: boolean; data: VirtualPartsMaster[]; error?: string }> {
   try {
-    const [rawParts, rawContents, rawUsages] = await Promise.all([
+    const [rawParts, rawContents, rawUsages, rawTrays] = await Promise.all([
       getSheetRows('PartsMaster!A1:Z'),
       getSheetRows('TraysContent!A1:Z'),
-      getSheetRows('Usage!A1:Z')
+      getSheetRows('Usage!A1:Z'),
+      getSheetRows('Trays!A1:Z')
     ]);
 
     if (rawParts.length < 2) return { success: true, data: [] };
@@ -40,28 +50,37 @@ export async function fetchPartsCatalogue(): Promise<{ success: boolean; data: V
       return obj as PartsMaster;
     });
 
-    if (rawContents.length < 2) {
-      return { success: true, data: partsMasterList.map((p, idx) => ({ ...p, inSetsQty: 0, rowIndex: `row-${idx}` })) };
-    }
-
-    const [contentHeaders, ...contentRows] = rawContents;
-    const traysContentList: TraysContent[] = contentRows.map(row => {
-      const obj: any = {};
-      contentHeaders.forEach((h, i) => { obj[h] = row[i] !== undefined ? row[i] : ''; });
-      return obj as TraysContent;
-    });
-
-    let usageList: Usage[] = [];
-    if (rawUsages.length >= 2) {
-      const [usageHeaders, ...usageRows] = rawUsages;
-      usageList = usageRows.map(row => {
+    // Parse TraysContent
+    const traysContentList: TraysContent[] = rawContents.length >= 2 ? (() => {
+      const [headers, ...rows] = rawContents;
+      return rows.map(row => {
         const obj: any = {};
-        usageHeaders.forEach((h, i) => { obj[h] = row[i] !== undefined ? row[i] : ''; });
+        headers.forEach((h, i) => { obj[h] = row[i] !== undefined ? row[i] : ''; });
+        return obj as TraysContent;
+      });
+    })() : [];
+
+    // Parse Usage
+    const usageList: Usage[] = rawUsages.length >= 2 ? (() => {
+      const [headers, ...rows] = rawUsages;
+      return rows.map(row => {
+        const obj: any = {};
+        headers.forEach((h, i) => { obj[h] = row[i] !== undefined ? row[i] : ''; });
         return obj as Usage;
       });
-    }
+    })() : [];
 
-    // 1. Standalone TraysContent [Current Qty] Calculation
+    // Parse Trays Layout Map
+    const traysList: Trays[] = rawTrays.length >= 2 ? (() => {
+      const [headers, ...rows] = rawTrays;
+      return rows.map(row => {
+        const obj: any = {};
+        headers.forEach((h, i) => { obj[h] = row[i] !== undefined ? row[i] : ''; });
+        return obj as Trays;
+      });
+    })() : [];
+
+    // 1. Core Item Math Step
     const virtualContents = traysContentList.map(item => {
       const ideal = Number(item.IdealQty) || 0;
       const baseQty = (item.ActualQty === undefined || item.ActualQty === '') ? ideal : Number(item.ActualQty) || 0;
@@ -76,22 +95,41 @@ export async function fetchPartsCatalogue(): Promise<{ success: boolean; data: V
       };
     });
 
-    // 2. Map PartsMaster and cross-reference values using your exact formula rules
+    // 2. Build Structural Relations
     const enrichedCatalogue: VirtualPartsMaster[] = partsMasterList.map((part, idx) => {
       const partNum = (part.PartNumber || '').toString().trim().toLowerCase();
       const masterSku = (part["Master SKU"] || '').toString().trim().toLowerCase();
 
-      // Look across TraysContent using BOTH keys to capture everything accurately
-      const inSetsQty = virtualContents
-        .filter(tc => {
-          const tcPart = (tc.PartNumber || '').toString().trim().toLowerCase();
-          return tcPart === partNum || (masterSku !== '' && tcPart === masterSku);
-        })
-        .reduce((sum, tc) => sum + tc.currentQty, 0);
+      // Filter matched items in trays
+      const matchedTrayContents = virtualContents.filter(tc => {
+        const tcPart = (tc.PartNumber || '').toString().trim().toLowerCase();
+        return tcPart === partNum || (masterSku !== '' && tcPart === masterSku);
+      });
+
+      const inSetsQty = matchedTrayContents.reduce((sum, tc) => sum + tc.currentQty, 0);
+
+      // Map where this part exists (Allocations)
+      const allocations: PartAllocationRef[] = matchedTrayContents.map(tc => {
+        const parentTray = traysList.find(t => t.TrayID === tc.TrayID);
+        return {
+          SetID: parentTray ? parentTray.SetID : 'Unknown Set',
+          TrayID: tc.TrayID,
+          TrayName: parentTray ? parentTray.TrayName : 'Unknown Tray',
+          CurrentQty: tc.currentQty
+        };
+      });
+
+      // Filter direct historical logs
+      const history = usageList.filter(u => {
+        const uPart = (u.PartNumber || '').toString().trim().toLowerCase();
+        return uPart === partNum || (masterSku !== '' && uPart === masterSku);
+      });
 
       return {
         ...part,
-        inSetsQty, // Raw, independent kit fleet quantity
+        inSetsQty,
+        allocations,
+        history,
         rowIndex: `row-${idx}-${part.PartNumber}`
       };
     });
