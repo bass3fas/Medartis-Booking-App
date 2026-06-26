@@ -104,7 +104,12 @@ export default function SetDetailsDrawer({ set, isOpen, onClose }: DrawerProps) 
                         >
                           <div>
                             <h4 className="text-sm font-bold tracking-tight text-base-content">{tray.TrayName}</h4>
-                            <p className="text-[11px] opacity-40 font-mono mt-0.5">Tray ID: {tray.TrayID} | Type: {tray.TrayType || 'Core Level'}</p>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <p className="text-[11px] opacity-40 font-mono">Tray ID: {tray.TrayID} | Type: {tray.TrayType || 'Core Level'}</p>
+                              <span className={`badge badge-xs font-bold font-mono ${tray.computedTrayStatus === 'Complete' ? 'badge-success' : 'badge-error'}`}>
+                                {tray.computedTrayStatus}
+                              </span>
+                            </div>
                           </div>
                           <svg 
                             xmlns="http://www.w3.org/2000/svg" 
@@ -134,18 +139,21 @@ export default function SetDetailsDrawer({ set, isOpen, onClose }: DrawerProps) 
                                 <tbody>
                                   {tray.contents.map((item, idx) => {
                                     const ideal = Number(item.IdealQty) || 0;
-                                    const actual = item.ActualQty !== undefined && item.ActualQty !== '' ? Number(item.ActualQty) : ideal;
-                                    const isMissing = actual < ideal;
+                                    const current = item.computedCurrentQty; // 🌟 Uses our new virtual calculation directly
+                                    const isMissing = current < ideal;
 
                                     return (
                                       <tr key={item.ItemID || idx} className="hover:bg-base-50 border-b border-base-100 last:border-0 font-medium">
                                         <td className="font-mono text-[11px] text-primary">{item.PartNumber}</td>
                                         <td className="max-w-[180px] truncate opacity-80">{item.Description}</td>
                                         <td className="text-center font-mono font-bold opacity-40">{ideal}</td>
-                                        <td className={`text-center font-mono font-black ${isMissing ? 'text-error' : 'text-base-content'}`}>{actual}</td>
+                                        {/* Current quantity turns red instantly if any items are missing or locked in pending usage cycles */}
+                                        <td className={`text-center font-mono font-black ${isMissing ? 'text-error' : 'text-success'}`}>
+                                          {current}
+                                        </td>
                                         <td className="text-right">
                                           <span className={`badge badge-xs font-mono font-bold px-1.5 py-1 ${isMissing ? 'badge-error bg-error/10 text-error' : 'badge-success bg-success/10 text-success'}`}>
-                                            {isMissing ? `-${ideal - actual}` : 'OK'}
+                                            {isMissing ? `Missing ${ideal - current}` : 'Full'}
                                           </span>
                                         </td>
                                       </tr>
