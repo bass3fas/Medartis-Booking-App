@@ -52,7 +52,7 @@ async function getRawTraysContent(): Promise<TraysContent[]> {
 }
 
 // ==========================================
-// 1. MAIN MATRIX PAGE LOADER (Restored Original Working Math)
+// 1. MAIN MATRIX PAGE LOADER (Isolated Structural Cascade)
 // ==========================================
 export async function fetchEnrichedSets(): Promise<{ success: boolean; data: VirtualSet[]; error?: string }> {
   try {
@@ -64,42 +64,65 @@ export async function fetchEnrichedSets(): Promise<{ success: boolean; data: Vir
       getUsage()
     ]);
 
-    // 1. Calculate original item-level quantities exactly how they worked before
-    const virtualContents = rawContents.map(item => {
-      const ideal = Number(item.IdealQty) || 0;
-      const baseQty = (item.ActualQty === undefined || item.ActualQty === '') ? ideal : Number(item.ActualQty) || 0;
-
-      // Restored the clean original working usage filter
-      const pendingUsageSum = rawUsages
-        .filter(u => u.ItemID === item.ItemID && (u["Usage Status"] === 'Pending to Refill' || u.Status === 'Pending to Refill'))
-        .reduce((sum, u) => sum + (Number(u.QtyUsed) || 0), 0);
-
-      return {
-        ...item,
-        computedCurrentQty: baseQty - pendingUsageSum
+    // Format all incoming usage states
+    const processedUsages: VirtualUsage[] = rawUsages.map(u => {
+      const used = Number(u.QtyUsed) || 0;
+      const refilled = Number(u["Qty Refilled"]) || 0;
+      return { 
+        ...u, 
+        computedUsageStatus: used === refilled ? 'Refilled' : 'Pending to Refill' 
       };
     });
 
-    // 2. Map Trays and calculate TrayStatus accurately
-    const virtualTrays = rawTrays.map(tray => {
-      const relatedContents = virtualContents.filter(c => c.TrayID === tray.TrayID);
-      const totalCurrentQty = relatedContents.reduce((sum, c) => sum + c.computedCurrentQty, 0);
-      const totalIdealQty = relatedContents.reduce((sum, c) => sum + (Number(c.IdealQty) || 0), 0);
-      
-      // If our current items are less than ideal items, the tray is incomplete
-      const computedTrayStatus = totalCurrentQty >= totalIdealQty ? 'Complete' : 'InComplete';
-
-      return {
-        ...tray,
-        computedTrayStatus
-      };
-    });
-
-    // 3. Map final Sets and evaluate completeness based on live trays
+    // Loop through every single Set independently to build isolated tray scopes
     const data: VirtualSet[] = rawSets.map((set) => {
       const setId = set.SetID;
-      
-      // Handle Location and Booking status mapping
+
+      // Filter down only the specific trays tied to this set instance
+      const relatedSetTrays = rawTrays.filter(t => t.SetID === setId);
+
+      // Map those trays and calculate item metrics isolated to this set environment
+      let setHasIncompleteTray = false;
+
+      if (relatedSetTrays.length > 0) {
+        relatedSetTrays.forEach(tray => {
+          const trayContents = rawContents.filter(c => c.TrayID === tray.TrayID);
+
+          let totalCurrent = 0;
+          let totalIdeal = 0;
+
+          trayContents.forEach(item => {
+            const ideal = Number(item.IdealQty) || 0;
+            const baseQty = (item.ActualQty === undefined || item.ActualQty === '') ? ideal : Number(item.ActualQty) || 0;
+
+            // Strict item mapping logic: must match item identity and belong to this active set block
+            const pendingUsageSum = processedUsages
+              .filter(u => u.ItemID === item.ItemID && u.computedUsageStatus === 'Pending to Refill')
+              .reduce((sum, u) => sum + (Number(u.QtyUsed) || 0), 0);
+
+            const computedCurrentQty = baseQty - pendingUsageSum;
+
+            totalCurrent += computedCurrentQty;
+            totalIdeal += ideal;
+          });
+
+          // Evaluate this tray structure: if items don't balance out, flip the flag
+          if (totalCurrent < totalIdeal) {
+            setHasIncompleteTray = true;
+          }
+        });
+      }
+
+      // 🚦 FINAL DETERMINISTIC COMPLETENESS STATUS ASSIGNMENT
+      let computedComplete: 'Yes' | 'No' = 'Yes';
+      if (relatedSetTrays.length > 0) {
+        computedComplete = setHasIncompleteTray ? 'No' : 'Yes';
+      } else {
+        // Safe fallback text if no trays exist
+        computedComplete = (set.IsComplete && set.IsComplete.toLowerCase() === 'yes') ? 'Yes' : 'No';
+      }
+
+      // Handle Location and Booking properties routing
       const match = rawBookings.find(b => {
         const requestedSets = b["Requested Sets"] || b["Selected Sets"] || "";
         return requestedSets.includes(setId) && !["Returned", "Cancelled"].includes(b.Status);
@@ -107,14 +130,6 @@ export async function fetchEnrichedSets(): Promise<{ success: boolean; data: Vir
       
       const computedStatus = match ? 'Booked' : 'Free';
       const computedLocation = match ? match.Hospital || 'In Transit' : (set.Location || 'Warehouse');
-      
-      // 🔗 LIVE COUPLING FIX:
-      // Look at the computed statuses of all trays linked to this specific Set
-      const relatedSetTrays = virtualTrays.filter(t => t.SetID === setId);
-      const hasIncompleteTray = relatedSetTrays.some(t => t.computedTrayStatus === 'InComplete');
-      
-      // If any individual tray is InComplete, the whole set is marked "No" (Incomplete)
-      const computedComplete = (relatedSetTrays.length > 0 && !hasIncompleteTray) ? 'Yes' : 'No';
 
       return {
         ...set,
