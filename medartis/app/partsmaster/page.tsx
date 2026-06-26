@@ -183,7 +183,7 @@ export default function PartNumbersCataloguePage() {
                                 </div>
                               )}
 
-                              {/* TAB CONTENT VIEW 2: Case History Logs */}
+                              {/* --- TAB CONTENT VIEW 2: Case History Logs --- */}
                               {subTab === 'history' && (
                                 <div className="space-y-2">
                                   <p className="text-[10px] font-mono uppercase font-black opacity-50 tracking-wider">Case Allocation Ledger History</p>
@@ -191,20 +191,27 @@ export default function PartNumbersCataloguePage() {
                                     <p className="text-xs italic opacity-40 py-2">No past clinical usage entries matching this item configuration.</p>
                                   ) : (
                                     <div className="max-h-48 overflow-y-auto border border-base-200 rounded-xl divide-y divide-base-100 bg-base-50">
-                                      {part.history.map((log, hIdx) => (
-                                        <div key={hIdx} className="p-3 text-xs flex justify-between items-center font-mono">
-                                          <div>
-                                            <p className="font-sans font-black text-base-content">{log.Hospital || 'Unknown Facility'}</p>
-                                            <p className="text-[10px] opacity-40 mt-0.5">📅 {log.Date || 'No Date Logged'} | Patient MRN: {log.PatientMRN || '—'} | BookingID: {log.BookingID}</p>
+                                      {part.history.map((log, hIdx) => {
+                                        // 🛡️ Cast both strings to explicit numbers to prevent JavaScript evaluation failure
+                                        const usedQty = Number(log.QtyUsed) || 0;
+                                        const refilledQty = Number(log["Qty Refilled"]) || 0;
+                                        const isFullyRefilled = usedQty === refilledQty;
+
+                                        return (
+                                          <div key={hIdx} className="p-3 text-xs flex justify-between items-center font-mono">
+                                            <div>
+                                              <p className="font-sans font-black text-base-content">{log.Hospital || 'Unknown Facility'}</p>
+                                              <p className="text-[10px] opacity-40 mt-0.5">📅 {log.Date || 'No Date Logged'} | Patient MRN: {log.PatientMRN || '—'} | BookingID: {log.BookingID}</p>
+                                            </div>
+                                            <div className="text-right">
+                                              <span className="font-black text-base-content block">Used: {usedQty}</span>
+                                              <span className={`badge badge-xs font-bold mt-1 ${isFullyRefilled ? 'badge-success bg-success/10 text-success' : 'badge-warning bg-warning/10 text-warning'}`}>
+                                                {isFullyRefilled ? 'Refilled' : 'Pending Refill'}
+                                              </span>
+                                            </div>
                                           </div>
-                                          <div className="text-right">
-                                            <span className="font-black text-base-content block">Used: {log.QtyUsed}</span>
-                                            <span className={`badge badge-xs font-bold mt-1 ${log.QtyUsed === Number(log["Qty Refilled"]) ? 'badge-success' : 'badge-warning'}`}>
-                                              {log.QtyUsed === Number(log["Qty Refilled"]) ? 'Refilled' : 'Pending Refill'}
-                                            </span>
-                                          </div>
-                                        </div>
-                                      ))}
+                                        );
+                                      })}
                                     </div>
                                   )}
                                 </div>
