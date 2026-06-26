@@ -1,8 +1,8 @@
 // app/components/SetDetailsDrawer.tsx
 'use client';
 
-import { useState, useEffect } from 'react';
-import { VirtualSet, fetchTraysForSet, EnrichedTray } from '../actions/getSetsAction';
+import { useState, useEffect, Fragment } from 'react';
+import { VirtualSet, fetchTraysAndUsageForSet, EnrichedTray, VirtualUsage, VirtualTraysContent } from '../actions/getSetsAction';
 
 interface DrawerProps {
   set: VirtualSet | null;
@@ -11,174 +11,212 @@ interface DrawerProps {
 }
 
 export default function SetDetailsDrawer({ set, isOpen, onClose }: DrawerProps) {
+  const [activeTab, setActiveTab] = useState<'trays' | 'history'>('trays');
   const [trays, setTrays] = useState<EnrichedTray[]>([]);
+  const [setHistory, setSetHistory] = useState<VirtualUsage[]>([]);
   const [loading, setLoading] = useState(false);
   const [openTrayId, setOpenTrayId] = useState<string | null>(null);
+  const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!set || !isOpen) return;
-    
-    async function loadTrayStructures() {
+    async function loadDataCascade() {
       setLoading(true);
-      const res = await fetchTraysForSet(set!.SetID);
+      const res = await fetchTraysAndUsageForSet(set!.SetID);
       if (res.success) {
-        setTrays(res.data);
-        // Automatically expand the first tray panel for a premium user experience
-        if (res.data.length > 0) setOpenTrayId(res.data[0].TrayID);
+        setTrays(res.trays);
+        setSetHistory(res.setHistory);
+        if (res.trays.length > 0) setOpenTrayId(res.trays[0].TrayID);
       }
       setLoading(false);
     }
-
-    loadTrayStructures();
+    loadDataCascade();
   }, [set, isOpen]);
 
   if (!isOpen || !set) return null;
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden font-sans">
-      {/* Dark dim backdrop overlay click wrapper */}
-      <div className="absolute inset-0 bg-neutral/40 backdrop-blur-sm transition-opacity" onClick={onClose} />
+      <div className="absolute inset-0 bg-neutral/40 backdrop-blur-sm" onClick={onClose} />
 
       <div className="absolute inset-y-0 right-0 max-w-full flex pl-10">
-        <div className="w-screen max-w-2xl bg-base-100 border-l border-base-300 shadow-2xl flex flex-col justify-between">
+        <div className="w-screen max-w-2xl bg-base-100 border-l border-l-base-300 shadow-2xl flex flex-col justify-between">
           
-          {/* Header Module */}
-          <div className="p-6 border-b border-base-200 bg-base-50/50 flex justify-between items-start">
-            <div>
-              <span className="text-[10px] uppercase font-mono tracking-widest px-2 py-0.5 bg-primary/10 text-primary font-bold rounded">
-                {set.LoanType || 'Standard Kit'}
-              </span>
-              <h2 className="text-xl font-black tracking-tight text-base-content mt-2">{set.SetName}</h2>
-              <p className="text-xs font-mono opacity-50 mt-0.5">System Master Reference ID: {set.SetID}</p>
+          {/* Drawer Header */}
+          <div className="p-6 border-b border-base-200 bg-base-50/50">
+            <div className="flex justify-between items-start">
+              <div>
+                <h2 className="text-xl font-black tracking-tight">{set.SetName}</h2>
+                <p className="text-xs font-mono opacity-50 mt-0.5">SetID: {set.SetID}</p>
+              </div>
+              <button onClick={onClose} className="btn btn-sm btn-circle btn-ghost">✕</button>
             </div>
-            <button onClick={onClose} className="btn btn-sm btn-circle btn-ghost">✕</button>
+
+            {/* --- WORKFLOW TAB CONTROLS --- */}
+            <div className="tabs tabs-boxed bg-base-200/60 p-1 mt-4 max-w-xs">
+              <button 
+                onClick={() => setActiveTab('trays')} 
+                className={`tab tab-sm font-bold tracking-tight text-xs ${activeTab === 'trays' ? 'tab-active bg-base-100 shadow-sm' : ''}`}
+              >
+                Trays & Implants
+              </button>
+              <button 
+                onClick={() => setActiveTab('history')} 
+                className={`tab tab-sm font-bold tracking-tight text-xs ${activeTab === 'history' ? 'tab-active bg-base-100 shadow-sm' : ''}`}
+              >
+                Set History Ledger ({setHistory.length})
+              </button>
+            </div>
           </div>
 
-          {/* Central Scrollable Information Core */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-6">
-            
-            {/* Quick Meta Indicators Panel */}
-            <div className="grid grid-cols-3 gap-4 bg-base-200/40 p-4 rounded-xl border border-base-200 text-center">
-              <div>
-                <span className="text-[10px] uppercase font-mono font-bold opacity-40 block">Status</span>
-                <span className="text-xs font-bold text-base-content mt-1 block">{set.computedStatus}</span>
+          {/* Central Scroll Viewport */}
+          <div className="flex-1 overflow-y-auto p-6">
+            {loading ? (
+              <div className="flex flex-col items-center justify-center py-32 gap-2">
+                <span className="loading loading-ring loading-md text-primary"></span>
+                <span className="text-[10px] font-mono tracking-widest opacity-40 uppercase font-bold">Processing System Ledger...</span>
               </div>
-              <div>
-                <span className="text-[10px] uppercase font-mono font-bold opacity-40 block">Location</span>
-                <span className="text-xs font-bold text-base-content mt-1 block truncate px-1">📍 {set.computedLocation}</span>
+            ) : activeTab === 'history' ? (
+              
+              /* --- VIEW 1: MASTER SET HISTORY LEDGER --- */
+              <div className="space-y-4">
+                <h3 className="text-xs uppercase font-mono tracking-wider opacity-60 font-black">All Historical Kit Usages</h3>
+                {setHistory.length === 0 ? (
+                  <p className="text-xs opacity-40 italic text-center py-12">No surgical case parameters logged for this set.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {setHistory.map((log) => (
+                      <div key={log.UsageID} className="p-3 bg-base-50 border border-base-200 rounded-lg text-xs flex justify-between items-center">
+                        <div>
+                          <p className="font-bold text-base-content font-mono">{log.PartNumber} - <span className="opacity-60 font-sans font-medium">{log.Description || 'Component Unit'}</span></p>
+                          <p className="text-[10px] opacity-50 font-mono mt-0.5">MRN: {log.PatientMRN} | Hospital: {log.Hospital} | Date: {log.Date}</p>
+                        </div>
+                        <div className="text-right">
+                          <span className="font-mono font-black block">Qty: {log.QtyUsed}</span>
+                          <span className={`badge badge-xs font-mono font-bold mt-1 ${log.computedUsageStatus === 'Refilled' ? 'badge-success' : 'badge-warning'}`}>
+                            {log.computedUsageStatus}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-              <div>
-                <span className="text-[10px] uppercase font-mono font-bold opacity-40 block">Integrity</span>
-                <span className={`text-xs font-bold mt-1 block ${set.computedComplete === 'Yes' ? 'text-success' : 'text-error'}`}>
-                  {set.computedComplete === 'Yes' ? 'Complete Set' : 'Items Missing'}
-                </span>
-              </div>
-            </div>
 
-            {/* Trays Relational Content Block */}
-            <div>
-              <h3 className="text-xs uppercase font-mono tracking-wider opacity-60 font-black mb-4">
-                Assigned Tray Compartments ({trays.length})
-              </h3>
+            ) : (
 
-              {loading ? (
-                <div className="flex flex-col items-center justify-center py-16 gap-2">
-                  <span className="loading loading-ring loading-md text-primary"></span>
-                  <span className="text-[10px] font-mono tracking-widest opacity-40 uppercase font-bold">Unpacking Tray Contents...</span>
-                </div>
-              ) : trays.length === 0 ? (
-                <p className="text-xs opacity-40 italic text-center py-6 bg-base-50 rounded-xl border border-dashed">
-                  No layout trays are linked to this set in Google Sheets.
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {trays.map((tray) => {
-                    const isOpen = openTrayId === tray.TrayID;
-                    return (
-                      <div key={tray.TrayID} className="border border-base-300 rounded-xl overflow-hidden bg-base-50/30">
-                        
-                        {/* Dynamic Accordion Click Bar */}
-                        <button 
-                          onClick={() => setOpenTrayId(isOpen ? null : tray.TrayID)}
-                          className="w-full flex justify-between items-center p-4 bg-base-100 hover:bg-base-200/50 transition-colors text-left"
-                        >
-                          <div>
-                            <h4 className="text-sm font-bold tracking-tight text-base-content">{tray.TrayName}</h4>
-                            <div className="flex items-center gap-2 mt-0.5">
-                              <p className="text-[11px] opacity-40 font-mono">Tray ID: {tray.TrayID} | Type: {tray.TrayType || 'Core Level'}</p>
-                              <span className={`badge badge-xs font-bold font-mono ${tray.computedTrayStatus === 'Complete' ? 'badge-success' : 'badge-error'}`}>
-                                {tray.computedTrayStatus}
-                              </span>
-                            </div>
-                          </div>
-                          <svg 
-                            xmlns="http://www.w3.org/2000/svg" 
-                            className={`h-4 w-4 opacity-50 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} 
-                            fill="none" viewBox="0 0 24 24" stroke="currentColor"
-                          >
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7" />
-                          </svg>
-                        </button>
+              /* --- VIEW 2: TRAYS & INTERACTIVE CONTENT GRID --- */
+              <div className="space-y-4">
+                {trays.map((tray) => {
+                  const isTrayOpen = openTrayId === tray.TrayID;
+                  return (
+                    <div key={tray.TrayID} className="border border-base-300 rounded-xl overflow-hidden bg-base-50/30">
+                      <button 
+                        onClick={() => setOpenTrayId(isTrayOpen ? null : tray.TrayID)}
+                        className="w-full flex justify-between items-center p-4 bg-base-100 hover:bg-base-200/50 transition-colors text-left"
+                      >
+                        <div>
+                          <h4 className="text-sm font-bold text-base-content">{tray.TrayName}</h4>
+                          <p className="text-[11px] opacity-40 font-mono mt-0.5">Tray ID: {tray.TrayID}</p>
+                        </div>
+                        <span className={`badge badge-sm font-mono font-bold ${tray.computedTrayStatus === 'Complete' ? 'badge-success bg-success/10 text-success' : 'badge-error bg-error/10 text-error'}`}>
+                          {tray.computedTrayStatus}
+                        </span>
+                      </button>
 
-                        {/* Collapsible Dropdown Layout Matrix */}
-                        {isOpen && (
-                          <div className="border-t border-base-200 bg-base-100 overflow-x-auto">
-                            {tray.contents.length === 0 ? (
-                              <p className="text-[11px] opacity-40 p-4 italic">No specific screw/plate components inside this tray inventory.</p>
-                            ) : (
-                              <table className="table table-compact w-full text-xs">
-                                <thead>
-                                  <tr className="bg-base-200/50 text-[10px] font-mono uppercase opacity-60">
-                                    <th className="rounded-none">Part No</th>
-                                    <th>Description</th>
-                                    <th className="text-center">Ideal</th>
-                                    <th className="text-center">Current</th>
-                                    <th className="rounded-none text-right">Status</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {tray.contents.map((item, idx) => {
-                                    const ideal = Number(item.IdealQty) || 0;
-                                    const current = item.computedCurrentQty; // 🌟 Uses our new virtual calculation directly
-                                    const isMissing = current < ideal;
+                      {isTrayOpen && (
+                        <div className="border-t border-base-200 bg-base-100">
+                          <div className="overflow-x-auto">
+                            <table className="table table-compact w-full text-xs">
+                              <thead>
+                                <tr className="bg-base-200/50 text-[10px] font-mono uppercase opacity-60">
+                                  <th>Part No</th>
+                                  <th>Description</th>
+                                  <th className="text-center">Ideal</th>
+                                  <th className="text-center">Current</th>
+                                  <th className="text-right">Action</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {tray.contents.map((item) => {
+                                  const ideal = Number(item.IdealQty) || 0;
+                                  const current = item.computedCurrentQty;
+                                  const actual = item.ActualQty !== undefined && item.ActualQty !== '' ? Number(item.ActualQty) : ideal;
+                                  
+                                  const isMissing = current < ideal;
+                                  const isItemExpanded = expandedItemId === item.ItemID;
 
-                                    return (
-                                      <tr key={item.ItemID || idx} className="hover:bg-base-50 border-b border-base-100 last:border-0 font-medium">
-                                        <td className="font-mono text-[11px] text-primary">{item.PartNumber}</td>
-                                        <td className="max-w-[180px] truncate opacity-80">{item.Description}</td>
-                                        <td className="text-center font-mono font-bold opacity-40">{ideal}</td>
-                                        {/* Current quantity turns red instantly if any items are missing or locked in pending usage cycles */}
-                                        <td className={`text-center font-mono font-black ${isMissing ? 'text-error' : 'text-success'}`}>
-                                          {current}
-                                        </td>
-                                        <td className="text-right">
-                                          <span className={`badge badge-xs font-mono font-bold px-1.5 py-1 ${isMissing ? 'badge-error bg-error/10 text-error' : 'badge-success bg-success/10 text-success'}`}>
-                                            {isMissing ? `Missing ${ideal - current}` : 'Full'}
-                                          </span>
+                                  // Highlight discrepancy if physical sheet count is less than target, even without pending usages
+                                  const hasDiscrepancyNote = actual < ideal;
+
+                                  return (
+                                    <Fragment key={item.ItemID}>
+                                      <tr 
+                                        onClick={() => setExpandedItemId(isItemExpanded ? null : item.ItemID)}
+                                        className="hover:bg-base-50 border-b border-base-100 last:border-0 font-medium cursor-pointer transition-colors"
+                                      >
+                                        <td className="font-mono text-primary font-bold">{item.PartNumber}</td>
+                                        <td className="max-w-[160px] truncate opacity-70">{item.Description}</td>
+                                        <td className="text-center font-mono opacity-40">{ideal}</td>
+                                        <td className={`text-center font-mono font-black ${isMissing ? 'text-error' : 'text-success'}`}>{current}</td>
+                                        <td className="text-right text-[10px] font-bold text-primary font-mono">
+                                          {isItemExpanded ? 'Close ▲' : 'History ▼'}
                                         </td>
                                       </tr>
-                                    );
-                                  })}
-                                </tbody>
-                              </table>
-                            )}
+
+                                      {/* --- NESTED ITEM POP-DOWN LOGS & NOTES --- */}
+                                      {isItemExpanded && (
+                                        <tr className="bg-base-200/30">
+                                          <td colSpan={5} className="p-4 border-b border-base-200">
+                                            <div className="space-y-3">
+                                              
+                                              {/* Discrepancy Note Block */}
+                                              {hasDiscrepancyNote && (
+                                                <div className="p-2.5 bg-warning/10 border border-warning/20 text-warning-content rounded-md text-[11px]">
+                                                  <strong>ℹ️ Baseline Count Mismatch:</strong> Physical sheet allocation was manually dropped to {actual}/{ideal}. 
+                                                  {item.Notes ? ` Note: "${item.Notes}"` : ' Note: Item may have been borrowed to reinforce an active sister kit configuration.'}
+                                                </div>
+                                              )}
+
+                                              {/* Part History Inline Matrix */}
+                                              <div>
+                                                <p className="text-[10px] uppercase font-mono tracking-wide font-black opacity-50 mb-1.5">Component Usage History</p>
+                                                {item.itemHistory && item.itemHistory.length === 0 ? (
+                                                  <p className="text-[11px] opacity-40 italic">No specific past logs for this part number inside this tray.</p>
+                                                ) : (
+                                                  <div className="max-h-24 overflow-y-auto border border-base-200 rounded-md bg-base-100">
+                                                    {item.itemHistory.map((h, hIdx) => (
+                                                      <div key={hIdx} className="p-2 text-[11px] border-b border-base-100 last:border-0 flex justify-between font-mono">
+                                                        <span>📅 {h.Date || 'No Date'} | Hosp: {h.Hospital || 'Unknown'}</span>
+                                                        <span className="font-bold text-base-content">Used: {h.QtyUsed} ({h.computedUsageStatus})</span>
+                                                      </div>
+                                                    ))}
+                                                  </div>
+                                                )}
+                                              </div>
+
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      )}
+                                    </Fragment>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
                           </div>
-                        )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
 
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
+            )}
           </div>
 
-          {/* Action Area Footer */}
-          <div className="p-4 border-t border-base-200 bg-base-50 flex items-center justify-end gap-3">
-            <button onClick={onClose} className="btn btn-sm btn-ghost font-bold normal-case">
-              Close View
-            </button>
+          <div className="p-4 border-t border-base-200 bg-base-50 flex justify-end">
+            <button onClick={onClose} className="btn btn-sm btn-ghost font-bold normal-case">Close View</button>
           </div>
 
         </div>

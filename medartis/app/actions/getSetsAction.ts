@@ -2,25 +2,22 @@
 'use server';
 
 import { getSets, getBookings, getTrays, getUsage } from '../lib/google-sheets';
-import { Trays, TraysContent, Usage } from '../types/interfaces';
+import { Trays, TraysContent, Usage, Sets } from '../types/interfaces';
 import { google } from 'googleapis';
 
-// --- Extended TypeScript Interfaces with Virtual Columns ---
-
-export interface VirtualSet {
-  SetID: string;
-  SetName: string;
-  LoanType?: string;
-  Location?: string;
-  SystemStatus?: string;
-  Notes?: string;
+export interface VirtualSet extends Sets {
   computedStatus: 'Free' | 'Booked';
   computedComplete: 'Yes' | 'No';
   computedLocation: string;
 }
 
+export interface VirtualUsage extends Usage {
+  computedUsageStatus: 'Refilled' | 'Pending to Refill';
+}
+
 export interface VirtualTraysContent extends TraysContent {
   computedCurrentQty: number;
+  itemHistory: VirtualUsage[];
 }
 
 export interface EnrichedTray extends Trays {
@@ -28,7 +25,7 @@ export interface EnrichedTray extends Trays {
   contents: VirtualTraysContent[];
 }
 
-// Low-level helper to fetch TraysContent directly using your library pattern
+// Low-level helper to fetch TraysContent sheets data directly
 async function getRawTraysContent(): Promise<TraysContent[]> {
   const auth = new google.auth.JWT({
     email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
@@ -41,7 +38,6 @@ async function getRawTraysContent(): Promise<TraysContent[]> {
     spreadsheetId: process.env.GOOGLE_SPREADSHEET_ID,
     range: 'TraysContent!A1:Z',
   });
-  
   const rows = response.data.values || [];
   if (rows.length < 2) return [];
 
@@ -55,10 +51,11 @@ async function getRawTraysContent(): Promise<TraysContent[]> {
   });
 }
 
-// --- MAIN ENRICHED SETS FETCH (Used by the dashboard grid) ---
+// ==========================================
+// 1. MAIN MATRIX PAGE LOADER (Restored Original Working Math)
+// ==========================================
 export async function fetchEnrichedSets(): Promise<{ success: boolean; data: VirtualSet[]; error?: string }> {
   try {
-    // 1. Fetch all 5 required tables in parallel
     const [rawSets, rawBookings, rawTrays, rawContents, rawUsages] = await Promise.all([
       getSets(),
       getBookings(),
@@ -67,13 +64,12 @@ export async function fetchEnrichedSets(): Promise<{ success: boolean; data: Vir
       getUsage()
     ]);
 
-    // 2. Pre-calculate Trays Content with their virtual "Current Qty"
-    const virtualContents: VirtualTraysContent[] = rawContents.map(item => {
+    // 1. Calculate original item-level quantities exactly how they worked before
+    const virtualContents = rawContents.map(item => {
       const ideal = Number(item.IdealQty) || 0;
-      // AppSheet logic: If ActualQty is blank/undefined, fall back to IdealQty
       const baseQty = (item.ActualQty === undefined || item.ActualQty === '') ? ideal : Number(item.ActualQty) || 0;
 
-      // Filter matching pending usages: [ItemID] = [_THISROW].[ItemID] AND status = "Pending to Refill"
+      // Restored the clean original working usage filter
       const pendingUsageSum = rawUsages
         .filter(u => u.ItemID === item.ItemID && (u["Usage Status"] === 'Pending to Refill' || u.Status === 'Pending to Refill'))
         .reduce((sum, u) => sum + (Number(u.QtyUsed) || 0), 0);
@@ -84,114 +80,116 @@ export async function fetchEnrichedSets(): Promise<{ success: boolean; data: Vir
       };
     });
 
-    // 3. Pre-calculate Trays with their virtual "TrayStatus"
-    const virtualTrays: EnrichedTray[] = rawTrays.map(tray => {
+    // 2. Map Trays and calculate TrayStatus accurately
+    const virtualTrays = rawTrays.map(tray => {
       const relatedContents = virtualContents.filter(c => c.TrayID === tray.TrayID);
-      
       const totalCurrentQty = relatedContents.reduce((sum, c) => sum + c.computedCurrentQty, 0);
       const totalIdealQty = relatedContents.reduce((sum, c) => sum + (Number(c.IdealQty) || 0), 0);
-
-      // AppSheet logic: if(sum(Current Qty) >= sum(IdealQty), "Complete", "InComplete")
+      
+      // If our current items are less than ideal items, the tray is incomplete
       const computedTrayStatus = totalCurrentQty >= totalIdealQty ? 'Complete' : 'InComplete';
 
       return {
         ...tray,
-        computedTrayStatus,
-        contents: relatedContents
+        computedTrayStatus
       };
     });
 
-    // 4. Map final Set level values (Availability, Location, and cascading Completeness)
-    const enrichedSets: VirtualSet[] = rawSets.map((set) => {
+    // 3. Map final Sets and evaluate completeness based on live trays
+    const data: VirtualSet[] = rawSets.map((set) => {
       const setId = set.SetID;
-
-      // Rule A: Availability Status (Free vs Booked)
-      const isActiveBooking = rawBookings.some(b => {
+      
+      // Handle Location and Booking status mapping
+      const match = rawBookings.find(b => {
         const requestedSets = b["Requested Sets"] || b["Selected Sets"] || "";
-        const isAttached = requestedSets.includes(setId);
-        const isNotClosed = !["Returned", "Usage Received", "Cancelled"].includes(b.Status);
-        return isAttached && isNotClosed;
+        return requestedSets.includes(setId) && !["Returned", "Cancelled"].includes(b.Status);
       });
-      const computedStatus = isActiveBooking ? 'Booked' : 'Free';
-
-      // Rule B: Set Complete? (Based entirely on our virtual TrayStatus calculations!)
+      
+      const computedStatus = match ? 'Booked' : 'Free';
+      const computedLocation = match ? match.Hospital || 'In Transit' : (set.Location || 'Warehouse');
+      
+      // 🔗 LIVE COUPLING FIX:
+      // Look at the computed statuses of all trays linked to this specific Set
       const relatedSetTrays = virtualTrays.filter(t => t.SetID === setId);
       const hasIncompleteTray = relatedSetTrays.some(t => t.computedTrayStatus === 'InComplete');
-      const computedComplete = hasIncompleteTray ? 'No' : 'Yes';
-
-      // Rule C: Current Location Routing
-      const activeTransitBookings = rawBookings
-        .filter(b => {
-          const requestedSets = b["Requested Sets"] || b["Selected Sets"] || "";
-          return requestedSets.includes(setId) && ["Delivered", "Usage Received"].includes(b.Status);
-        })
-        .sort((a, b) => {
-          const dateA = new Date(`${a.CaseDate} ${a.CaseTime || '00:00'}`).getTime();
-          const dateB = new Date(`${b.CaseDate} ${b.CaseTime || '00:00'}`).getTime();
-          return dateB - dateA;
-        });
-
-      const computedLocation = activeTransitBookings.length > 0 
-        ? activeTransitBookings[0].Hospital 
-        : (set.Location || 'Warehouse Stock');
+      
+      // If any individual tray is InComplete, the whole set is marked "No" (Incomplete)
+      const computedComplete = (relatedSetTrays.length > 0 && !hasIncompleteTray) ? 'Yes' : 'No';
 
       return {
         ...set,
         computedStatus,
-        computedComplete,
-        computedLocation
+        computedLocation,
+        computedComplete
       };
     });
 
-    return { success: true, data: enrichedSets };
+    return { success: true, data };
   } catch (err: any) {
-    console.error("Critical error in cascade virtual calculation engine:", err);
+    console.error('Error fetching enriched sets matrix:', err);
     return { success: false, data: [], error: err.message };
   }
 }
 
-// --- SPECIFIC RELATIONAL TRAYS FETCH (Used by the inspection side drawer) ---
-export async function fetchTraysForSet(setId: string): Promise<{ success: boolean; data: EnrichedTray[]; error?: string }> {
+// ==========================================
+// 2. DETAILED SLIDE-OVER DRAWER DATA LOADER
+// ==========================================
+export async function fetchTraysAndUsageForSet(setId: string): Promise<{ 
+  success: boolean; 
+  trays: EnrichedTray[]; 
+  setHistory: VirtualUsage[]; 
+  error?: string 
+}> {
   try {
-    // Re-run the calculations filtered strictly down for the single selected Set drawer lookups
     const [rawTrays, rawContents, rawUsages] = await Promise.all([
       getTrays(),
       getRawTraysContent(),
       getUsage()
     ]);
 
+    const processedUsages: VirtualUsage[] = rawUsages.map(u => {
+      const used = Number(u.QtyUsed) || 0;
+      const refilled = Number(u["Qty Refilled"]) || 0;
+      const computedUsageStatus = used === refilled ? 'Refilled' : 'Pending to Refill';
+      return { ...u, computedUsageStatus };
+    });
+
+    const setHistory = processedUsages.filter(u => u.SetID === setId);
     const relatedTrays = rawTrays.filter(t => t.SetID === setId);
 
-    const enrichedTrays: EnrichedTray[] = relatedTrays.map(tray => {
+    const trays: EnrichedTray[] = relatedTrays.map(tray => {
       const relatedContents = rawContents.filter(c => c.TrayID === tray.TrayID);
       
-      const virtualContents: VirtualTraysContent[] = relatedContents.map(item => {
+      const contents: VirtualTraysContent[] = relatedContents.map(item => {
         const ideal = Number(item.IdealQty) || 0;
         const baseQty = (item.ActualQty === undefined || item.ActualQty === '') ? ideal : Number(item.ActualQty) || 0;
         
-        const pendingUsageSum = rawUsages
-          .filter(u => u.ItemID === item.ItemID && (u["Usage Status"] === 'Pending to Refill' || u.Status === 'Pending to Refill'))
+        const itemHistory = processedUsages.filter(u => u.ItemID === item.ItemID);
+
+        const pendingUsageSum = itemHistory
+          .filter(u => u.computedUsageStatus === 'Pending to Refill')
           .reduce((sum, u) => sum + (Number(u.QtyUsed) || 0), 0);
 
         return {
           ...item,
-          computedCurrentQty: baseQty - pendingUsageSum
+          computedCurrentQty: baseQty - pendingUsageSum,
+          itemHistory
         };
       });
 
-      const totalCurrentQty = virtualContents.reduce((sum, c) => sum + c.computedCurrentQty, 0);
-      const totalIdealQty = virtualContents.reduce((sum, c) => sum + (Number(c.IdealQty) || 0), 0);
+      const totalCurrentQty = contents.reduce((sum, c) => sum + c.computedCurrentQty, 0);
+      const totalIdealQty = contents.reduce((sum, c) => sum + (Number(c.IdealQty) || 0), 0);
       const computedTrayStatus = totalCurrentQty >= totalIdealQty ? 'Complete' : 'InComplete';
 
       return {
         ...tray,
         computedTrayStatus,
-        contents: virtualContents
+        contents
       };
     });
 
-    return { success: true, data: enrichedTrays };
+    return { success: true, trays, setHistory };
   } catch (err: any) {
-    return { success: false, data: [], error: err.message };
+    return { success: false, trays: [], setHistory: [], error: err.message };
   }
 }
