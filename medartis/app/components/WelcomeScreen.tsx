@@ -96,7 +96,7 @@ export default function WelcomeScreen() {
   if (isAuthenticated && userRole !== 'operator') return null;
 
   return (
-    <div className="fixed inset-0 z-[100] bg-gradient-to-br from-primary to-secondary text-primary-content flex flex-col items-center justify-center p-6">
+    <div className="fixed inset-0 md:left-60 z-[100] bg-gradient-to-br from-primary to-secondary text-primary-content flex flex-col items-center justify-center p-6">
       <div className="card w-full max-w-md bg-base-100 text-base-content shadow-2xl p-8 border border-base-300">
         <div className="card-body p-0 items-center text-center">
           

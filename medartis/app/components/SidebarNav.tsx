@@ -46,7 +46,7 @@ export default function SidebarNav() {
   };
 
   return (
-    <aside className="hidden md:flex flex-col w-64 h-screen fixed top-0 bottom-0 left-0 bg-base-100 border-r border-base-300 text-base-content justify-between shadow-sm z-40">
+    <aside className="hidden md:flex flex-col w-60 h-screen fixed top-0 bottom-0 left-0 bg-base-100 border-r border-base-300 text-base-content justify-between shadow-sm z-40">
       
       {/* Upper Navigation Content Shell */}
       <div className="flex flex-col flex-1 overflow-y-auto">
