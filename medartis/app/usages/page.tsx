@@ -12,6 +12,7 @@ export default function GroupedUsageLogPage() {
   // Filtering Options
   const [searchQuery, setSearchQuery] = useState('');
   const [hospitalFilter, setHospitalFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'Refilled' | 'Pending to Refill'>('all'); // 🔄 Restored
   const [expandedCaseKey, setExpandedCaseKey] = useState<string | null>(null);
 
   useEffect(() => {
@@ -30,6 +31,7 @@ export default function GroupedUsageLogPage() {
 
   const uniqueHospitals = Array.from(new Set(cases.map(c => c.Hospital).filter(Boolean))).sort();
 
+  // Multi-pipeline filtering execution logic
   const filteredCases = cases.filter(c => {
     const matchesSearch = 
       c.PatientMRN.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -38,7 +40,14 @@ export default function GroupedUsageLogPage() {
 
     const matchesHospital = hospitalFilter === 'all' || c.Hospital === hospitalFilter;
 
-    return matchesSearch && matchesHospital;
+    // 🔄 Evaluate structural status flags for the group container
+    const hasPendingItems = c.items.some(item => item.computedUsageStatus === 'Pending to Refill');
+    const matchesStatus = 
+      statusFilter === 'all' || 
+      (statusFilter === 'Pending to Refill' && hasPendingItems) || 
+      (statusFilter === 'Refilled' && !hasPendingItems);
+
+    return matchesSearch && matchesHospital && matchesStatus;
   });
 
   return (
@@ -57,7 +66,7 @@ export default function GroupedUsageLogPage() {
       )}
 
       {/* Quick Controls Bar Panel */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4 p-4 bg-base-100 border border-base-300 rounded-xl shadow-sm">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4 p-4 bg-base-100 border border-base-300 rounded-xl shadow-sm">
         <input 
           type="text" 
           placeholder="Search Patient MRN, Booking code, component..." 
@@ -65,6 +74,18 @@ export default function GroupedUsageLogPage() {
           onChange={(e) => setSearchQuery(e.target.value)}
           className="input input-sm input-bordered font-semibold text-xs bg-base-50 focus:outline-none"
         />
+        
+        {/* 🔄 Re-injected Status Filter Control Dropdown */}
+        <select 
+          value={statusFilter} 
+          onChange={(e) => setStatusFilter(e.target.value as any)} 
+          className="select select-sm select-bordered font-semibold text-xs bg-base-50"
+        >
+          <option value="all">All Case Statuses</option>
+          <option value="Refilled">Fully Refilled Cases</option>
+          <option value="Pending to Refill">Cases with Pending Refills</option>
+        </select>
+
         <select 
           value={hospitalFilter} 
           onChange={(e) => setHospitalFilter(e.target.value)} 
@@ -137,14 +158,14 @@ export default function GroupedUsageLogPage() {
                 {isExpanded && (
                   <div className="p-4 border-t border-base-200 bg-base-50/30 grid grid-cols-1 lg:grid-cols-12 gap-5 shadow-inner">
                     
-                    {/* LEFT PANEL: Consumption Table Ledger Rows (7 Columns wide) */}
+                    {/* LEFT PANEL: Consumption Table Ledger Rows */}
                     <div className="lg:col-span-7 space-y-2">
                       <p className="text-[10px] font-mono uppercase font-black opacity-40 tracking-wider">Consumed Implant Element Specifications</p>
                       <div className="border border-base-300 rounded-xl overflow-hidden bg-base-100 max-h-72 overflow-y-auto shadow-sm">
                         <table className="table table-compact w-full text-xs font-mono">
                           <thead className="bg-base-100 border-b opacity-60 text-[10px] uppercase font-black">
                             <tr>
-                              <th className="p-2.5">Part Number / Tray</th>
+                              <th className="p-2.5">Part Number / Description</th>
                               <th className="text-right">Used</th>
                               <th className="text-right">Refilled</th>
                               <th className="text-right">Status</th>
@@ -155,7 +176,10 @@ export default function GroupedUsageLogPage() {
                               <tr key={item.UsageID} className="hover:bg-base-50/50">
                                 <td className="p-2.5">
                                   <span className="font-bold text-base-content block select-all">{item.PartNumber}</span>
-                                  <span className="text-[9px] opacity-40 block truncate max-w-[220px]">{item.TrayID} | {item.Description || 'No description'}</span>
+                                  <span className="text-[11px] font-sans font-semibold opacity-70 block truncate max-w-[280px]" title={item.Description}>
+                                    {item.Description || 'No description asset mapped'}
+                                  </span>
+                                  <span className="text-[9px] opacity-40 block">{item.TrayID}</span>
                                 </td>
                                 <td className="text-right font-bold text-base-content">{item.QtyUsed}</td>
                                 <td className="text-right opacity-60">{item["Qty Refilled"] || 0}</td>
@@ -171,7 +195,7 @@ export default function GroupedUsageLogPage() {
                       </div>
                     </div>
 
-                    {/* RIGHT PANEL: Case Validation Images (5 Columns wide) */}
+                    {/* RIGHT PANEL: Case Validation Images */}
                     <div className="lg:col-span-5 space-y-2">
                       <p className="text-[10px] font-mono uppercase font-black opacity-40 tracking-wider">
                         Case Validation Media Images ({caseGroup.photos.length})
@@ -181,23 +205,25 @@ export default function GroupedUsageLogPage() {
                           No imagery attachments discoverable for this surgical file.
                         </div>
                       ) : (
-                        <div className="grid grid-cols-2 gap-2 max-h-72 overflow-y-auto p-1 bg-base-100 border border-base-300 rounded-xl shadow-sm">
+                        /* 📋 Updated to look like real vertical A4 clipboards */
+                        <div className="grid grid-cols-2 gap-3 max-h-[500px] overflow-y-auto p-2 bg-base-100 border border-base-300 rounded-xl shadow-sm">
                           {caseGroup.photos.map((url, imgIdx) => (
                             <a 
                               key={imgIdx} 
                               href={url} 
                               target="_blank" 
                               rel="noreferrer" 
-                              className="group relative block aspect-video bg-base-200 border rounded-lg overflow-hidden shadow-sm hover:border-primary transition-all"
+                              className="group relative block aspect-[1/1.414] bg-base-200/50 border border-base-200 rounded-lg overflow-hidden shadow-sm hover:border-primary transition-all"
                             >
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img 
                                 src={url} 
                                 alt={`Clinical verification file ${imgIdx + 1}`}
-                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                                className="w-full h-full object-contain p-1 group-hover:scale-102 transition-transform duration-200"
+                                loading="lazy" // ⚡ Drastically improves initial loading lag by prioritizing visible items
                               />
-                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-[10px] text-white font-mono font-bold">
-                                View Fullsize ↗
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-[10px] text-white font-mono font-bold p-2 text-center">
+                                <span>View Fullscreen Document ↗</span>
                               </div>
                             </a>
                           ))}

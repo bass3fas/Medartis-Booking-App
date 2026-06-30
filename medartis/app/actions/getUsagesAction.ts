@@ -37,9 +37,9 @@ function buildAppSheetImageUrl(fileName: string): string {
   if (!fileName || fileName.trim() === '') return '';
   if (fileName.startsWith('http')) return fileName;
 
-  // Encodes path parameters perfectly to comply with AppSheet image router architecture
   const encodedFile = encodeURIComponent(fileName.trim());
-  return `https://www.appsheet.com/image/getimageurl?appName=MedartisPhase1-5435197&tableName=Usage%20Photos&fileName=${encodedFile}`;
+  // 🔥 Appending &width=1000 forces AppSheet to pre-render and stream a clear copy immediately inline
+  return `https://www.appsheet.com/image/getimageurl?appName=MedartisPhase1-5435197&tableName=Usage%20Photos&fileName=${encodedFile}&width=1000`;
 }
 
 export async function fetchUsageLog(): Promise<{ success: boolean; data: PatientMRNGroup[]; error?: string }> {
