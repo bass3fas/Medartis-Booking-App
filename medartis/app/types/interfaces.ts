@@ -142,3 +142,20 @@ export interface PartsMaster {
   "Refill Stock"?: number;
   Usages?: number;
 }
+
+
+export interface EnrichedUsage extends Usage {
+  computedUsageStatus: 'Refilled' | 'Pending to Refill';
+  rowIndex: string;
+}
+
+
+export interface PatientMRNGroup {
+  groupKey: string; // 🔑 Add this field
+  PatientMRN: string;
+  Hospital: string;
+  Date: string;
+  BookingID: string;
+  items: EnrichedUsage[];
+  photos: string[];
+}

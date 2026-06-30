@@ -2,21 +2,10 @@
 'use server';
 
 import { google } from 'googleapis';
-import { Usage } from '../types/interfaces';
+import { EnrichedUsage, PatientMRNGroup } from '../types/interfaces';
 
-export interface EnrichedUsage extends Usage {
-  computedUsageStatus: 'Refilled' | 'Pending to Refill';
-  rowIndex: string;
-}
 
-export interface PatientMRNGroup {
-  PatientMRN: string;
-  Hospital: string;
-  Date: string;
-  BookingID: string;
-  items: EnrichedUsage[];
-  photos: string[];
-}
+
 
 async function getSheetRows(rangeName: string): Promise<any[]> {
   const auth = new google.auth.JWT({
@@ -117,6 +106,7 @@ export async function fetchUsageLog(): Promise<{ success: boolean; data: Patient
 
       if (!groupsMap[groupKey]) {
         groupsMap[groupKey] = {
+          groupKey: groupKey,
           PatientMRN: displayMrn,
           Hospital: usage.Hospital || 'Unknown Facility',
           Date: usage.Date || '—',
@@ -165,8 +155,18 @@ export async function fetchUsageLog(): Promise<{ success: boolean; data: Patient
       }
     });
 
+    // 🔄 Robust descending date sorting pipeline
     const sortedGroups = Object.values(groupsMap).sort((a, b) => {
-      return new Date(b.Date).getTime() - new Date(a.Date).getTime();
+      const dateA = a.Date && a.Date !== '—' ? new Date(a.Date).getTime() : 0;
+      const dateB = b.Date && b.Date !== '—' ? new Date(b.Date).getTime() : 0;
+
+      // If both have valid dates, sort descending (newest first)
+      if (dateA !== 0 && dateB !== 0) {
+        return dateB - dateA;
+      }
+
+      // Fallback structural safety: push rows with missing dates (0) to the bottom
+      return dateA === 0 ? 1 : -1;
     });
 
     return { success: true, data: sortedGroups };

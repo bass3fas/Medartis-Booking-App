@@ -109,7 +109,7 @@ export default function GroupedUsageLogPage() {
       ) : (
         <div className="space-y-3">
           {filteredCases.map((caseGroup) => {
-            const caseKey = `${caseGroup.PatientMRN}-${caseGroup.BookingID}`;
+            const caseKey = caseGroup.groupKey;
             const isExpanded = expandedCaseKey === caseKey;
             const pendingItemsCount = caseGroup.items.filter(i => i.computedUsageStatus === 'Pending to Refill').length;
 
