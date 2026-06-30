@@ -52,33 +52,29 @@ export async function fetchUsageLog(): Promise<{ success: boolean; data: Patient
 
     if (rawUsages.length < 2) return { success: true, data: [] };
 
-    // 1. Build a local high-speed dictionary map for PartsMaster descriptions
+    // 1. Build PartsMaster Map (Keep as is...)
     const partsDescriptionMap: { [partNumber: string]: string } = {};
     if (rawParts.length >= 2) {
       const [partsHeaders, ...partsRows] = rawParts;
       const partNumIdx = partsHeaders.indexOf('PartNumber');
       const descIdx = partsHeaders.indexOf('Description');
-      
       if (partNumIdx !== -1 && descIdx !== -1) {
         partsRows.forEach(row => {
           if (row[partNumIdx]) {
-            const cleanKey = row[partNumIdx].toString().trim().toLowerCase();
-            partsDescriptionMap[cleanKey] = row[descIdx] || '';
+            partsDescriptionMap[row[partNumIdx].toString().trim().toLowerCase()] = row[descIdx] || '';
           }
         });
       }
     }
 
-    // 2. Parse flat Usage Log items & stitch descriptions dynamically
+    // 2. Parse Usage Log items (Keep as is...)
     const [usageHeaders, ...usageRows] = rawUsages;
     const usageList: EnrichedUsage[] = usageRows.map((row, idx) => {
       const item: any = {};
       usageHeaders.forEach((h, i) => { item[h] = row[i] !== undefined ? row[i] : ''; });
-      
       const used = Number(item.QtyUsed) || 0;
       const refilled = Number(item["Qty Refilled"]) || 0;
       
-      // Dynamic cross-reference description fallback injection if column is blank
       if (!item.Description || item.Description.trim() === '') {
         const lookupKey = (item.PartNumber || '').toString().trim().toLowerCase();
         item.Description = partsDescriptionMap[lookupKey] || '';
@@ -91,7 +87,7 @@ export async function fetchUsageLog(): Promise<{ success: boolean; data: Patient
       };
     });
 
-    // 3. Parse standalone Usage Photos rows
+    // 3. Parse standalone Usage Photos (Keep as is...)
     let photoList: any[] = [];
     if (rawPhotos.length >= 2) {
       const [photoHeaders, ...photoRows] = rawPhotos;
@@ -102,27 +98,36 @@ export async function fetchUsageLog(): Promise<{ success: boolean; data: Patient
       });
     }
 
-    // 4. Run structural case groupings mapping aggregation
+    // 4. 🧠 UPDATED STRUCTURAL GROUPING ENGINE
     const groupsMap: { [key: string]: PatientMRNGroup } = {};
 
     usageList.forEach((usage) => {
-      const mrn = (usage.PatientMRN || 'No-MRN').toString().trim();
-      const bookingId = (usage.BookingID || 'No-Booking').toString().trim();
-      const groupKey = `${mrn}-${bookingId}`;
+      const rawMrn = (usage.PatientMRN || '').toString().trim();
+      const bookingId = (usage.BookingID || '').toString().trim() || 'NoBooking';
+      const hospital = (usage.Hospital || '').toString().trim() || 'UnknownFacility';
+      const date = (usage.Date || '').toString().trim() || 'NoDate';
+
+      // Determine clean display label
+      const displayMrn = rawMrn !== '' ? rawMrn : 'No MRN Assigned';
+
+      // 🔄 DYNAMIC KEY ROUTING:
+      const groupKey = rawMrn !== '' 
+        ? `${rawMrn}-${bookingId}` 
+        : `NOMRN-HASH-${hospital.replace(/\s+/g, '')}-${date.replace(/\//g, '-')}-${bookingId}`;
 
       if (!groupsMap[groupKey]) {
         groupsMap[groupKey] = {
-          PatientMRN: mrn,
+          PatientMRN: displayMrn,
           Hospital: usage.Hospital || 'Unknown Facility',
           Date: usage.Date || '—',
-          BookingID: bookingId,
+          BookingID: usage.BookingID || '—',
           items: [],
           photos: []
         };
       }
       groupsMap[groupKey].items.push(usage);
 
-      // Extract inline photo columns via AppSheet link wrapper
+      // Append inline item photo strings
       if (usage.Photo && usage.Photo.trim() !== '') {
         const targetUrl = buildAppSheetImageUrl(usage.Photo);
         if (targetUrl && !groupsMap[groupKey].photos.includes(targetUrl)) {
@@ -131,13 +136,28 @@ export async function fetchUsageLog(): Promise<{ success: boolean; data: Patient
       }
     });
 
-    // 5. Inject photos from the secondary 'Usage Photos' tab
+    // 5. Cross-reference photos matching the context keys
     photoList.forEach(pRow => {
       const pMRN = (pRow.MRN || '').toString().trim();
-      const pBooking = (pRow.BookingID || '').toString().trim();
-      const matchingGroupKey = `${pMRN}-${pBooking}`;
+      const pBooking = (pRow.BookingID || '').toString().trim() || 'NoBooking';
+      const pDate = (pRow.Date || '').toString().trim();
+      
+      // We look up standard data maps or fall into context routing maps
+      let matchingGroupKey = '';
+      if (pMRN !== '') {
+        matchingGroupKey = `${pMRN}-${pBooking}`;
+      } else {
+        // Look up which unassigned group this photo belongs to by matching metadata context
+        const discoveredKey = Object.keys(groupsMap).find(key => {
+          const group = groupsMap[key];
+          return group.PatientMRN === 'No MRN Assigned' && 
+                 group.BookingID === pBooking &&
+                 (pDate === '' || group.Date === pDate);
+        });
+        if (discoveredKey) matchingGroupKey = discoveredKey;
+      }
 
-      if (groupsMap[matchingGroupKey] && pRow.Photo && pRow.Photo.trim() !== '') {
+      if (matchingGroupKey && groupsMap[matchingGroupKey] && pRow.Photo && pRow.Photo.trim() !== '') {
         const targetUrl = buildAppSheetImageUrl(pRow.Photo);
         if (targetUrl && !groupsMap[matchingGroupKey].photos.includes(targetUrl)) {
           groupsMap[matchingGroupKey].photos.push(targetUrl);
