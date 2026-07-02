@@ -70,6 +70,7 @@ export interface Bookings {
   "Delivery Note Link"?: string;
   "Sales Email"?: string;
   CaseDay?: string;
+  Type?: string;
 }
 
 export interface BookingSets {
