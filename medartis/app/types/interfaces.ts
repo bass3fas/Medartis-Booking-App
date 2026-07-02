@@ -72,23 +72,29 @@ export interface Bookings {
   CaseDay?: string;
   Type?: string;
 }
-
-export interface BookingSets {
-  BookingSetID: string;
+export interface BookingSet {
   BookingID: string;
   SetID: string;
-  photo1?: string;
-  photo2?: string;
-  photo3?: string;
-  photo4?: string;
-  photo5?: string;
-  photo6?: string;
-  photo7?: string;
-  "Photo Confirmation": string;
-  "Delivery Note"?: string;
-  BookingStatus?: string;
-  "Set Name"?: string;
+  SetName?: string;
+  Status?: string;
+  // Up to 7 Tray Photos tracking columns
+  Photo1?: string;
+  Photo2?: string;
+  Photo3?: string;
+  Photo4?: string;
+  Photo5?: string;
+  Photo6?: string;
+  Photo7?: string;
 }
+
+// Update your EnhancedBooking type to match columns 20, 23, and 24
+export type EnhancedBooking = {
+  BookingID: string;
+  // ... other standard booking fields
+  RelatedBookingSets: BookingSet[]; // Column 20: REF_ROWS("BookingSets", "BookingID")
+  RelatedUsages: any[];            // Column 23: REF_ROWS("Usage", "BookingID")
+  RelatedUsagePhotos: any[];       // Column 24: REF_ROWS("Usage Photos", "BookingID")
+};
 
 export interface Usage {
   UsageID: string;

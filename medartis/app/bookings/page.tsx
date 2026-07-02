@@ -3,6 +3,7 @@
 
 import { useState, useEffect, Fragment } from 'react';
 import { fetchBookingsLog, EnhancedBooking, PatientUsageDetails } from '../actions/getBookingsAction';
+import { BookingSet } from '../types/interfaces';
 
 export default function BookingsDashboardPage() {
   const [bookings, setBookings] = useState<EnhancedBooking[]>([]);
@@ -11,6 +12,11 @@ export default function BookingsDashboardPage() {
   
   const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
   const [selectedMRNTabs, setSelectedMRNTabs] = useState<Record<string, string>>({});
+  const [activeRefView, setActiveRefView] = useState<{
+    type: 'BookingSets' | 'PartsMaster' | 'PatientHistory';
+    title: string;
+    data: any;
+  } | null>(null);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [hospitalFilter, setHospitalFilter] = useState('all');
@@ -42,6 +48,12 @@ export default function BookingsDashboardPage() {
     if (rawType === 'LONGTERM') return 'LONGTERM';
     if (rawType === 'CANCELED') return 'Canceled';
     return '';
+  }
+
+  function buildSetImageUrl(fileName: string): string {
+    if (!fileName || fileName.trim() === '') return '';
+    if (fileName.startsWith('http')) return fileName;
+    return `https://www.appsheet.com/image/getimageurl?appName=MedartisPhase1-5435197&tableName=BookingSets&fileName=${encodeURIComponent(fileName.trim())}&width=1000`;
   }
 
   const filteredBookings = bookings.filter(b => {
@@ -264,15 +276,29 @@ export default function BookingsDashboardPage() {
                                   )}
                                 </div>
                                 <div className="pt-2.5 border-t border-base-200">
-                                  <h4 className="text-[10px] uppercase font-mono tracking-wider text-base-content/50 font-black mb-1.5">Selected / Dispatched Sets</h4>
-                                  {selectedSetsArray.length > 0 ? (
-                                    <div className="flex flex-wrap gap-1">
-                                      {selectedSetsArray.map((set, idx) => (
-                                        <span key={idx} className="bg-info/5 text-info px-2 py-1 rounded font-mono text-[11px] border border-info/10 font-bold">{set}</span>
+                                  <h4 className="text-[10px] uppercase font-mono tracking-wider text-base-content/50 font-black mb-1.5">
+                                    Selected / Dispatched Sets (Interactive Reference List)
+                                  </h4>
+                                  {booking.RelatedBookingSets && booking.RelatedBookingSets.length > 0 ? (
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {booking.RelatedBookingSets.map((set, idx) => (
+                                        <button
+                                          key={idx}
+                                          type="button"
+                                          onClick={() => setActiveRefView({
+                                            type: 'BookingSets',
+                                            title: `Linked Kit Details for Case File: ${booking.BookingID}`,
+                                            data: booking.RelatedBookingSets
+                                          })}
+                                          className="bg-info/10 hover:bg-info/20 text-info text-left px-2.5 py-1.5 rounded font-mono text-[11px] border border-info/20 font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+                                        >
+                                          📦 {set.SetID}
+                                          <span className="text-[9px] opacity-60 font-medium">({[set.Photo1, set.Photo2, set.Photo3, set.Photo4, set.Photo5, set.Photo6, set.Photo7].filter(Boolean).length} 📷)</span>
+                                        </button>
                                       ))}
                                     </div>
                                   ) : (
-                                    <p className="italic opacity-40 font-mono text-[11px]">Pending delivery scans.</p>
+                                    <p className="italic opacity-40 font-mono text-[11px]">Pending delivery scans or missing child references.</p>
                                   )}
                                 </div>
                               </div>
@@ -404,6 +430,95 @@ export default function BookingsDashboardPage() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {activeRefView && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex justify-end transition-opacity animate-fade-in">
+          <div className="w-full max-w-2xl bg-base-100 h-full shadow-2xl p-6 overflow-y-auto flex flex-col border-l border-base-300">
+            <div className="flex items-center justify-between border-b border-base-200 pb-4 mb-4">
+              <div>
+                <span className="text-[10px] font-mono font-bold tracking-widest text-primary uppercase">
+                  Relative View ➔ {activeRefView.type}
+                </span>
+                <h3 className="text-lg font-black text-base-content">{activeRefView.title}</h3>
+              </div>
+              <button 
+                onClick={() => setActiveRefView(null)}
+                className="btn btn-sm btn-circle btn-ghost font-bold text-base"
+              >
+                ✕
+              </button>
+            </div>
+
+            {activeRefView.type === 'BookingSets' && (
+              <div className="space-y-6 flex-1">
+                {activeRefView.data.length === 0 ? (
+                  <p className="text-xs font-mono opacity-50 italic">No associated sets configured for this booking catalog matrix.</p>
+                ) : (
+                  activeRefView.data.map((set: BookingSet, idx: number) => {
+                    const availablePhotos = [
+                      set.Photo1, set.Photo2, set.Photo3, 
+                      set.Photo4, set.Photo5, set.Photo6, set.Photo7
+                    ].filter(Boolean) as string[];
+
+                    return (
+                      <div key={idx} className="border border-base-200 bg-base-50/40 rounded-xl p-4 space-y-4">
+                        <div className="flex justify-between items-center bg-base-100 p-2.5 rounded-lg border border-base-200">
+                          <span className="font-mono font-black text-xs text-primary">{set.SetID}</span>
+                          <span className="badge badge-sm font-mono font-bold uppercase tracking-wider bg-info/10 text-info border-info/20">
+                            {set.Status || 'Allocated'}
+                          </span>
+                        </div>
+
+                        <div>
+                          <h5 className="text-[10px] font-mono uppercase font-black tracking-wide text-base-content/40 mb-2">
+                            Tray Inspection Photos ({availablePhotos.length} / 7)
+                          </h5>
+                          {availablePhotos.length > 0 ? (
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                              {availablePhotos.map((photoFile, pIdx) => {
+                                const fullUrl = buildSetImageUrl(photoFile);
+                                return (
+                                  <a 
+                                    key={pIdx} 
+                                    href={fullUrl} 
+                                    target="_blank" 
+                                    rel="noreferrer" 
+                                    className="group relative border border-base-300 rounded-lg overflow-hidden aspect-square bg-base-100 hover:border-primary transition-colors"
+                                  >
+                                    <img 
+                                      src={fullUrl} 
+                                      alt={`Tray View ${pIdx + 1}`} 
+                                      className="w-full h-full object-cover group-hover:scale-102 transition-transform" 
+                                    />
+                                    <span className="absolute bottom-1 left-1 bg-black/70 text-[8px] font-mono text-white px-1 py-0.5 rounded font-black uppercase">
+                                      View #{pIdx + 1}
+                                    </span>
+                                  </a>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div className="p-6 text-center border border-dashed border-base-300 rounded-lg text-xs italic opacity-40 font-mono bg-base-100">
+                              No tray verification photo profiles uploaded to this set matrix.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
+
+            {activeRefView.type === 'PartsMaster' && (
+              <div className="space-y-4 font-mono text-xs">
+                <p className="italic opacity-50">Fetching relational records matching item code entity...</p>
+              </div>
+            )}
+
+          </div>
         </div>
       )}
     </div>

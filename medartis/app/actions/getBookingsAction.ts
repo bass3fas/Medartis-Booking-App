@@ -2,7 +2,7 @@
 'use server';
 
 import { google } from 'googleapis';
-import { Bookings } from '../types/interfaces';
+import { Bookings, BookingSet } from '../types/interfaces';
 
 export interface UsageItem {
   ItemCode: string;
@@ -19,6 +19,7 @@ export interface PatientUsageDetails {
 export type EnhancedBooking = Bookings & {
   Type?: string;
   PatientUsages: PatientUsageDetails[];
+  RelatedBookingSets: BookingSet[];
 };
 
 // 🔥 Synchronized with getUsagesAction.ts to stream clear media blocks accurately
@@ -32,11 +33,12 @@ function buildAppSheetImageUrl(fileName: string): string {
 
 export async function fetchBookingsLog(): Promise<{ success: boolean; data: EnhancedBooking[]; error?: string }> {
   try {
-    const [rawBookings, rawUsages, rawPhotos, rawParts] = await Promise.all([
+    const [rawBookings, rawUsages, rawPhotos, rawParts, rawBookingSets] = await Promise.all([
       getSheetRows('Bookings!A1:Z'),
       getSheetRows('Usage!A1:Z'),
       getSheetRows("'Usage Photos'!A1:Z"),
-      getSheetRows('PartsMaster!A1:Z')
+      getSheetRows('PartsMaster!A1:Z'),
+      getSheetRows('BookingSets!A1:Z') // 🌟 Fetching the referenced table
     ]);
 
     if (rawBookings.length < 2) return { success: true, data: [] };
@@ -45,6 +47,7 @@ export async function fetchBookingsLog(): Promise<{ success: boolean; data: Enha
     const [usageHeaders, ...usageRows] = rawUsages;
     const [photoHeaders, ...photoRows] = rawPhotos;
     const [partsHeaders, ...partsRows] = rawParts;
+    const [bSetHeaders, ...bSetRows] = rawBookingSets;
 
     // 1. Build Description Reference Map
     const partsDescriptionMap: Record<string, string> = {};
@@ -78,7 +81,16 @@ export async function fetchBookingsLog(): Promise<{ success: boolean; data: Enha
       return obj;
     });
 
-    // 4. Group and cross-map components with bookings
+    // 4. Parse BookingSets child table
+    const bookingSetsParsed = bSetRows.map(row => {
+      const obj: any = {};
+      bSetHeaders.forEach((h, i) => {
+        obj[h] = row[i] !== undefined ? row[i].toString().trim() : '';
+      });
+      return obj;
+    });
+
+    // 5. Group and cross-map components with bookings
     const bookingsList: EnhancedBooking[] = bookingRows
       .map((row) => {
         const item: any = {};
@@ -131,6 +143,22 @@ export async function fetchBookingsLog(): Promise<{ success: boolean; data: Enha
           };
         });
 
+        const relatedBookingSets: BookingSet[] = bookingSetsParsed
+          .filter(bs => bs.BookingID === bID)
+          .map(bs => ({
+            BookingID: bs.BookingID,
+            SetID: bs.SetID,
+            SetName: bs.SetName || bs.SetNameList || bs.SetID,
+            Status: bs.Status,
+            Photo1: bs.Photo1 || '',
+            Photo2: bs.Photo2 || '',
+            Photo3: bs.Photo3 || '',
+            Photo4: bs.Photo4 || '',
+            Photo5: bs.Photo5 || '',
+            Photo6: bs.Photo6 || '',
+            Photo7: bs.Photo7 || '',
+          }));
+
         return {
           BookingID: bID,
           Salesperson: item.Salesperson || item.Sales_Person || '—',
@@ -151,7 +179,8 @@ export async function fetchBookingsLog(): Promise<{ success: boolean; data: Enha
           "Sales Email": item["Sales Email"] || '',
           CaseDay: item.CaseDay || '',
           Type: item.Type || '',
-          PatientUsages: patientUsages
+          PatientUsages: patientUsages,
+          RelatedBookingSets: relatedBookingSets
         };
       })
       .filter((booking) => booking.BookingID !== '');
