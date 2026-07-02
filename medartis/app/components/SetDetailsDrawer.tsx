@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect, Fragment } from 'react';
-import { VirtualSet, fetchTraysAndUsageForSet, EnrichedTray, VirtualUsage, VirtualTraysContent } from '../actions/getSetsAction';
+import { VirtualSet, fetchTraysAndUsageForSet, EnrichedTray, VirtualUsage } from '../actions/getSetsAction';
 
 interface DrawerProps {
   set: VirtualSet | null;
@@ -34,6 +34,17 @@ export default function SetDetailsDrawer({ set, isOpen, onClose }: DrawerProps) 
   }, [set, isOpen]);
 
   if (!isOpen || !set) return null;
+
+  // Extract valid image attachments assigned to this set record dynamically
+  const availablePhotos = [
+    set.photo1 || (set as any).Photo1,
+    set.photo2 || (set as any).Photo2,
+    set.photo3 || (set as any).Photo3,
+    set.photo4 || (set as any).Photo4,
+    set.photo5 || (set as any).Photo5,
+    set.photo6 || (set as any).Photo6,
+    set.photo7 || (set as any).Photo7,
+  ].filter(Boolean);
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden font-sans">
@@ -70,7 +81,37 @@ export default function SetDetailsDrawer({ set, isOpen, onClose }: DrawerProps) 
           </div>
 
           {/* Central Scroll Viewport */}
-          <div className="flex-1 overflow-y-auto p-6">
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            
+            {/* --- VISUAL SCAN ARCHIVE ATTACHMENTS GRID --- */}
+            {availablePhotos.length > 0 && (
+              <div className="space-y-2">
+                <h3 className="text-xs uppercase font-mono tracking-wider opacity-60 font-black">
+                  📷 Kit Scan Verification Photos ({availablePhotos.length})
+                </h3>
+                <div className="grid grid-cols-4 gap-2">
+                  {availablePhotos.map((url, index) => (
+                    <a 
+                      key={index} 
+                      href={url} 
+                      target="_blank" 
+                      rel="noreferrer" 
+                      className="group relative aspect-square bg-base-200 border border-base-300 rounded-lg overflow-hidden hover:border-primary transition-all p-1 flex items-center justify-center"
+                    >
+                      <img 
+                        src={url} 
+                        alt={`Set Scan File Layer ${index + 1}`} 
+                        className="max-w-full max-h-full object-contain group-hover:scale-105 transition-transform" 
+                      />
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                        <span className="text-[9px] font-mono text-white bg-neutral px-1 py-0.5 rounded font-bold">VIEW</span>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {loading ? (
               <div className="flex flex-col items-center justify-center py-32 gap-2">
                 <span className="loading loading-ring loading-md text-primary"></span>
@@ -145,8 +186,6 @@ export default function SetDetailsDrawer({ set, isOpen, onClose }: DrawerProps) 
                                   
                                   const isMissing = current < ideal;
                                   const isItemExpanded = expandedItemId === item.ItemID;
-
-                                  // Highlight discrepancy if physical sheet count is less than target, even without pending usages
                                   const hasDiscrepancyNote = actual < ideal;
 
                                   return (
@@ -170,7 +209,6 @@ export default function SetDetailsDrawer({ set, isOpen, onClose }: DrawerProps) 
                                           <td colSpan={5} className="p-4 border-b border-base-200">
                                             <div className="space-y-3">
                                               
-                                              {/* Discrepancy Note Block */}
                                               {hasDiscrepancyNote && (
                                                 <div className="p-2.5 bg-warning/10 border border-warning/20 text-warning-content rounded-md text-[11px]">
                                                   <strong>ℹ️ Baseline Count Mismatch:</strong> Physical sheet allocation was manually dropped to {actual}/{ideal}. 
@@ -178,7 +216,6 @@ export default function SetDetailsDrawer({ set, isOpen, onClose }: DrawerProps) 
                                                 </div>
                                               )}
 
-                                              {/* Part History Inline Matrix */}
                                               <div>
                                                 <p className="text-[10px] uppercase font-mono tracking-wide font-black opacity-50 mb-1.5">Component Usage History</p>
                                                 {item.itemHistory && item.itemHistory.length === 0 ? (
