@@ -5,10 +5,8 @@ import { useState, useEffect } from 'react';
 import { fetchBookingsLog } from '../actions/getBookingsAction';
 import { Bookings } from '../types/interfaces';
 
-type ExtendedBooking = Bookings & { Type?: string };
-
 export default function BookingsDashboardPage() {
-  const [bookings, setBookings] = useState<ExtendedBooking[]>([]);
+  const [bookings, setBookings] = useState<Bookings[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -36,14 +34,14 @@ export default function BookingsDashboardPage() {
   const uniqueHospitals = Array.from(new Set(bookings.map(b => b.Hospital).filter(Boolean))).sort();
   const uniqueSalesPeople = Array.from(new Set(bookings.map(b => b.Salesperson).filter(Boolean))).sort();
 
-  // Helper template to process and display the custom Type metadata
-  function displayCaseType(booking: ExtendedBooking): 'Normal Case' | 'Long Term' | 'Demo' | 'Removal' | 'Canceled' {
-    const rawType = (booking.Type || '').toUpperCase().trim();
+  // Helper template to safely handle type string formatting rules
+  function formatCaseType(booking: Bookings): string {
+    const rawType = (booking.Type || '').toUpperCase().replace(/\s+/g, '').trim(); // 🧼 Strips out white space to support 'LONGTERM'
     if (rawType === 'REMOVAL') return 'Removal';
     if (rawType === 'DEMO') return 'Demo';
-    if (rawType === 'LONG TERM') return 'Long Term';
+    if (rawType === 'LONGTERM') return 'Long Term';
     if (rawType === 'CANCELED') return 'Canceled';
-    return 'Normal Case';
+    return ''; // Return completely empty string if blank
   }
 
   // Processing Multi-Pipeline Filter Multi-Match Evaluation
@@ -56,10 +54,16 @@ export default function BookingsDashboardPage() {
 
     const matchesHospital = hospitalFilter === 'all' || b.Hospital === hospitalFilter;
     const matchesSales = salesPersonFilter === 'all' || b.Salesperson === salesPersonFilter;
-    const matchesStatus = statusFilter === 'all' || b.Status.toLowerCase() === statusFilter.toLowerCase();
     
-    const computedType = displayCaseType(b);
-    const matchesType = typeFilter === 'all' || computedType.toLowerCase() === typeFilter.toLowerCase();
+    // Normalize status names for cleaner filtering matchups
+    let statusClean = (b.Status || '').trim().toLowerCase();
+    if (statusClean === 'usage received') statusClean = 'used';
+    const matchesStatus = statusFilter === 'all' || statusClean === statusFilter.toLowerCase();
+    
+    const formattedType = formatCaseType(b);
+    const matchesType = typeFilter === 'all' || 
+      (typeFilter === 'empty' && formattedType === '') || 
+      (typeFilter !== 'empty' && formattedType.toLowerCase() === typeFilter.toLowerCase());
 
     return matchesSearch && matchesHospital && matchesSales && matchesStatus && matchesType;
   });
@@ -69,16 +73,17 @@ export default function BookingsDashboardPage() {
     'pending': 'bg-rose-500/10 text-rose-600 border border-rose-500/20', // Red
     'confirmed': 'bg-amber-500/10 text-amber-600 border border-amber-500/20', // Orange
     'delivered': 'bg-blue-500/10 text-blue-600 border border-blue-500/20', // Blue
-    'usage received': 'bg-teal-500/10 text-teal-600 border border-teal-500/20', // Turquoise
-    'returned': 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20' // Green
+    // 🦚 Changed to Cyan/Teal mix style to look visibly distinct from Emerald Green
+    'used': 'bg-cyan-500/15 text-cyan-700 border border-cyan-400/30 font-extrabold shadow-xs', 
+    'usage received': 'bg-cyan-500/15 text-cyan-700 border border-cyan-400/30 font-extrabold shadow-xs',
+    'returned': 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 font-bold' // Green
   };
 
   const typeBadges: Record<string, string> = {
-    'Normal Case': 'bg-base-200 text-base-content/70',
     'Long Term': 'bg-purple-500/10 text-purple-600 border border-purple-500/20',
     'Demo': 'bg-amber-500/10 text-amber-600 border border-amber-500/20',
     'Removal': 'bg-rose-500/10 text-rose-600 border border-rose-500/20',
-    'Canceled': 'bg-error/10 text-error border border-error/20 font-black'
+    'Canceled': 'bg-error/10 text-error border border-error/20 font-bold'
   };
 
   return (
@@ -116,11 +121,11 @@ export default function BookingsDashboardPage() {
             className="select select-sm select-bordered font-semibold text-xs bg-base-50 w-full"
           >
             <option value="all">All Types</option>
-            <option value="Normal Case">Normal Case</option>
-            <option value="Long Term">Long Term</option>
-            <option value="Demo">Demo</option>
-            <option value="Removal">Removal</option>
-            <option value="Canceled">Canceled</option>
+            <option value="empty">Standard / Empty</option>
+            <option value="long term">Long Term</option>
+            <option value="demo">Demo</option>
+            <option value="removal">Removal</option>
+            <option value="canceled">Canceled</option>
           </select>
         </div>
 
@@ -135,7 +140,7 @@ export default function BookingsDashboardPage() {
             <option value="pending">Pending</option>
             <option value="confirmed">Confirmed</option>
             <option value="delivered">Delivered</option>
-            <option value="usage received">Usage Received</option>
+            <option value="used">Used</option>
             <option value="returned">Returned</option>
           </select>
         </div>
@@ -182,7 +187,7 @@ export default function BookingsDashboardPage() {
               <tr>
                 <th className="p-3">Booking ID</th>
                 <th className="p-3">Case Date</th>
-                <th className="p-3">Type Classification</th>
+                <th className="p-3">Type</th>
                 <th className="p-3">Hospital Destination</th>
                 <th className="p-3">Clinical Surgeon</th>
                 <th className="p-3">Patient MRN</th>
@@ -192,8 +197,9 @@ export default function BookingsDashboardPage() {
             </thead>
             <tbody className="divide-y divide-base-200 font-medium text-base-content/90">
               {filteredBookings.map((booking) => {
-                const currentType = displayCaseType(booking);
-                const rawStatus = (booking.Status || '').trim().toLowerCase();
+                const currentType = formatCaseType(booking);
+                const displayStatus = (booking.Status || '').trim();
+                const rawStatusKey = displayStatus.toLowerCase();
                 const mrnVal = booking["Patient MRN"];
 
                 return (
@@ -205,9 +211,13 @@ export default function BookingsDashboardPage() {
                       {booking.CaseDate || '—'}
                     </td>
                     <td className="p-3">
-                      <span className={`badge badge-sm font-bold px-2 py-2 rounded text-[10px] uppercase tracking-wide ${typeBadges[currentType] || 'bg-base-200'}`}>
-                        {currentType}
-                      </span>
+                      {currentType ? (
+                        <span className={`badge badge-sm font-bold px-2 py-2 rounded text-[10px] uppercase tracking-wide ${typeBadges[currentType] || 'bg-base-200'}`}>
+                          {currentType}
+                        </span>
+                      ) : (
+                        <span className="opacity-20">—</span>
+                      )}
                     </td>
                     <td className="p-3 font-semibold">
                       {booking.Hospital}
@@ -230,8 +240,8 @@ export default function BookingsDashboardPage() {
                       </span>
                     </td>
                     <td className="p-3 text-center">
-                      <span className={`badge badge-sm font-bold font-mono px-2.5 py-2 text-[10px] uppercase tracking-wider ${statusBadges[rawStatus] || 'bg-base-200 text-base-content'}`}>
-                        {booking.Status || 'Pending'}
+                      <span className={`badge badge-sm font-mono px-2.5 py-2 text-[10px] uppercase tracking-wider ${statusBadges[rawStatusKey] || 'bg-base-200 text-base-content'}`}>
+                        {rawStatusKey === 'usage received' ? 'Used' : displayStatus || 'Pending'}
                       </span>
                     </td>
                   </tr>
