@@ -4,6 +4,8 @@
 import { useState, useEffect, Fragment } from 'react';
 import { fetchBookingsLog, EnhancedBooking, PatientUsageDetails } from '../actions/getBookingsAction';
 import { BookingSet } from '../types/interfaces';
+import SetDetailsDrawer from '../components/SetDetailsDrawer';
+import { VirtualSet } from '../actions/getSetsAction';
 
 export default function BookingsDashboardPage() {
   const [bookings, setBookings] = useState<EnhancedBooking[]>([]);
@@ -17,6 +19,9 @@ export default function BookingsDashboardPage() {
     title: string;
     data: any;
   } | null>(null);
+
+  const [drawerTargetSet, setDrawerTargetSet] = useState<any | null>(null);
+  const [isSetDrawerOpen, setIsSetDrawerOpen] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [hospitalFilter, setHospitalFilter] = useState('all');
@@ -53,6 +58,14 @@ export default function BookingsDashboardPage() {
   function buildSetImageUrl(fileName: string): string {
     if (!fileName || fileName.trim() === '') return '';
     if (fileName.startsWith('http')) return fileName;
+    return `https://www.appsheet.com/image/getimageurl?appName=MedartisPhase1-5435197&tableName=Sets&fileName=${encodeURIComponent(fileName.trim())}&width=1000`;
+  }
+
+  // Point asset builder query directly to the active BookingSets context bucket
+  function buildBookingSetImageUrl(fileName: string): string {
+    if (!fileName || fileName.trim() === '') return '';
+    if (fileName.startsWith('http')) return fileName;
+    // 🌟 Uses tableName=BookingSets matches file configurations path prefix structures accurately
     return `https://www.appsheet.com/image/getimageurl?appName=MedartisPhase1-5435197&tableName=BookingSets&fileName=${encodeURIComponent(fileName.trim())}&width=1000`;
   }
 
@@ -277,25 +290,42 @@ export default function BookingsDashboardPage() {
                                 </div>
                                 <div className="pt-2.5 border-t border-base-200">
                                   <h4 className="text-[10px] uppercase font-mono tracking-wider text-base-content/50 font-black mb-1.5">
-                                    Selected / Dispatched Sets (Interactive Reference List)
+                                    Selected / Dispatched Sets (Interactive Reference Link)
                                   </h4>
                                   {booking.RelatedBookingSets && booking.RelatedBookingSets.length > 0 ? (
                                     <div className="flex flex-wrap gap-1.5">
-                                      {booking.RelatedBookingSets.map((set, idx) => (
-                                        <button
-                                          key={idx}
-                                          type="button"
-                                          onClick={() => setActiveRefView({
-                                            type: 'BookingSets',
-                                            title: `Linked Kit Details for Case File: ${booking.BookingID}`,
-                                            data: booking.RelatedBookingSets
-                                          })}
-                                          className="bg-info/10 hover:bg-info/20 text-info text-left px-2.5 py-1.5 rounded font-mono text-[11px] border border-info/20 font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
-                                        >
-                                          📦 {set.SetID}
-                                          <span className="text-[9px] opacity-60 font-medium">({[set.Photo1, set.Photo2, set.Photo3, set.Photo4, set.Photo5, set.Photo6, set.Photo7].filter(Boolean).length} 📷)</span>
-                                        </button>
-                                      ))}
+                                      {booking.RelatedBookingSets.map((set: any, idx: number) => {
+                                        const activePhotosArray = [
+                                          set.Photo1, set.Photo2, set.Photo3,
+                                          set.Photo4, set.Photo5, set.Photo6, set.Photo7
+                                        ].filter(Boolean);
+
+                                        return (
+                                          <button
+                                            key={idx}
+                                            type="button"
+                                            onClick={() => {
+                                              const formattedSetForDrawer = {
+                                                ...set,
+                                                Photo1: set.Photo1 ? buildBookingSetImageUrl(set.Photo1) : '',
+                                                Photo2: set.Photo2 ? buildBookingSetImageUrl(set.Photo2) : '',
+                                                Photo3: set.Photo3 ? buildBookingSetImageUrl(set.Photo3) : '',
+                                                Photo4: set.Photo4 ? buildBookingSetImageUrl(set.Photo4) : '',
+                                                Photo5: set.Photo5 ? buildBookingSetImageUrl(set.Photo5) : '',
+                                                Photo6: set.Photo6 ? buildBookingSetImageUrl(set.Photo6) : '',
+                                                Photo7: set.Photo7 ? buildBookingSetImageUrl(set.Photo7) : '',
+                                              };
+
+                                              setDrawerTargetSet(formattedSetForDrawer);
+                                              setIsSetDrawerOpen(true);
+                                            }}
+                                            className="bg-info/10 hover:bg-info/20 text-info text-left px-2.5 py-1.5 rounded font-mono text-[11px] border border-info/20 font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+                                          >
+                                            📦 {set.SetID}
+                                            <span className="text-[9px] opacity-70 font-medium">({activePhotosArray.length} 📷)</span>
+                                          </button>
+                                        );
+                                      })}
                                     </div>
                                   ) : (
                                     <p className="italic opacity-40 font-mono text-[11px]">Pending delivery scans or missing child references.</p>
@@ -380,25 +410,40 @@ export default function BookingsDashboardPage() {
                                   <div className="md:col-span-5 flex flex-col justify-between">
                                     <div>
                                       <h5 className="text-[10px] font-mono font-bold text-base-content/60 uppercase mb-2">Usage Photo Verification</h5>
+                                      {/* 📄 RESTRUCTURED PATIENT USAGE MATRIX SHEET LAYOUT CONTAINER */}
                                       {activeUsageDetails.PhotoUrl ? (
-                                        <a 
-                                          href={activeUsageDetails.PhotoUrl} 
-                                          target="_blank" 
-                                          rel="noreferrer" 
-                                          className="group block relative border border-base-300 rounded-lg overflow-hidden aspect-video bg-base-50 hover:border-primary transition-colors"
-                                        >
-                                          <img 
-                                            src={activeUsageDetails.PhotoUrl} 
-                                            alt={`Usage MRN ${activeUsageDetails.MRN}`} 
-                                            className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-150" 
-                                          />
-                                          <span className="absolute bottom-1 right-1 bg-black/70 text-white font-mono text-[8px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">
-                                            Open Full Resolution 🔗
+                                        <div className="flex flex-col gap-1.5 w-full sm:w-64 shrink-0">
+                                          <span className="text-[9px] font-mono font-black uppercase tracking-wider text-base-content/40">
+                                            Attached Verification Log Sheet
                                           </span>
-                                        </a>
+
+                                          {/* 🌟 FIX: Updated box model to track standard A4 proportions tightly with zero cropping bounds */}
+                                          <a
+                                            href={activeUsageDetails.PhotoUrl}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="group relative w-full aspect-[1/1.414] bg-base-200 border border-base-300 rounded-xl overflow-hidden hover:border-primary transition-all shadow-xs bg-radial from-base-100 to-base-200 flex items-center justify-center p-1"
+                                          >
+                                            <img
+                                              src={activeUsageDetails.PhotoUrl}
+                                              alt="Patient Usage Form Log"
+                                              // 🌟 FIX: object-contain displays the full paper document sheet without slicing off margins
+                                              className="w-full h-full object-contain group-hover:scale-101 transition-transform"
+                                            />
+
+                                            {/* Dynamic hover glass card overlay indicators */}
+                                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                                              <span className="bg-base-100 text-base-content text-[10px] font-mono font-bold px-2.5 py-1.5 rounded-lg shadow-md border border-base-300 tracking-tight">
+                                                🔍 Open Full Screen Document
+                                              </span>
+                                            </div>
+                                          </a>
+                                        </div>
                                       ) : (
-                                        <div className="border border-dashed border-base-300 rounded-lg aspect-video flex items-center justify-center text-[10px] font-mono opacity-40 italic bg-base-50">
-                                          No verification photo saved
+                                        <div className="w-full sm:w-64 aspect-[1/1.414] shrink-0 border-2 border-dashed border-base-300 rounded-xl flex flex-col items-center justify-center bg-base-50/50 p-4 text-center">
+                                          <span className="text-xl mb-1 opacity-30">📋</span>
+                                          <span className="text-[10px] font-mono opacity-40 font-bold uppercase tracking-wider">No Usage Log Sheet</span>
+                                          <span className="text-[9px] opacity-30 font-mono mt-0.5">Verification page not uploaded</span>
                                         </div>
                                       )}
                                     </div>
@@ -478,23 +523,24 @@ export default function BookingsDashboardPage() {
                           {availablePhotos.length > 0 ? (
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                               {availablePhotos.map((photoFile, pIdx) => {
-                                const fullUrl = buildSetImageUrl(photoFile);
+                                const imgUrl = buildBookingSetImageUrl(photoFile);
                                 return (
-                                  <a 
-                                    key={pIdx} 
-                                    href={fullUrl} 
-                                    target="_blank" 
-                                    rel="noreferrer" 
-                                    className="group relative border border-base-300 rounded-lg overflow-hidden aspect-square bg-base-100 hover:border-primary transition-colors"
+                                  <a
+                                    key={pIdx}
+                                    href={imgUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="group relative border border-base-300 rounded-lg overflow-hidden aspect-[4/3] bg-base-100 hover:border-primary transition-all shadow-xs block"
                                   >
-                                    <img 
-                                      src={fullUrl} 
-                                      alt={`Tray View ${pIdx + 1}`} 
-                                      className="w-full h-full object-cover group-hover:scale-102 transition-transform" 
+                                    <img
+                                      src={imgUrl}
+                                      alt={`Tray Verification Frame ${pIdx + 1}`}
+                                      className="w-full h-full object-cover group-hover:scale-102 transition-transform"
+                                      loading="lazy"
                                     />
-                                    <span className="absolute bottom-1 left-1 bg-black/70 text-[8px] font-mono text-white px-1 py-0.5 rounded font-black uppercase">
-                                      View #{pIdx + 1}
-                                    </span>
+                                    <div className="absolute inset-x-0 bottom-0 bg-black/60 text-[8px] font-mono text-white p-1 font-bold text-center uppercase tracking-wider backdrop-blur-xs opacity-90">
+                                      View Image #{pIdx + 1}
+                                    </div>
                                   </a>
                                 );
                               })}
@@ -521,6 +567,8 @@ export default function BookingsDashboardPage() {
           </div>
         </div>
       )}
+
+      <SetDetailsDrawer set={drawerTargetSet as VirtualSet | null} isOpen={isSetDrawerOpen} onClose={() => setIsSetDrawerOpen(false)} />
     </div>
   );
 }
