@@ -1,19 +1,18 @@
 // app/bookings/page.tsx
 'use client';
 
-import { useState, useEffect } from 'react';
-import { fetchBookingsLog } from '../actions/getBookingsAction';
-import { Bookings } from '../types/inventory';
+import { useState, useEffect, Fragment } from 'react';
+import { fetchBookingsLog, EnhancedBooking, PatientUsageDetails } from '../actions/getBookingsAction';
 
 export default function BookingsDashboardPage() {
-  const [bookings, setBookings] = useState<Bookings[]>([]);
+  const [bookings, setBookings] = useState<EnhancedBooking[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
   
-  // 🧭 State to manage expanded detail accordion drawer keys
   const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
+  // Track selected MRN sub-tab index within specific Booking IDs
+  const [selectedMRNTabs, setSelectedMRNTabs] = useState<Record<string, string>>({});
 
-  // Filters state hooks
   const [searchQuery, setSearchQuery] = useState('');
   const [hospitalFilter, setHospitalFilter] = useState('all');
   const [salesPersonFilter, setSalesPersonFilter] = useState('all');
@@ -37,11 +36,11 @@ export default function BookingsDashboardPage() {
   const uniqueHospitals = Array.from(new Set(bookings.map(b => b.Hospital).filter(Boolean))).sort();
   const uniqueSalesPeople = Array.from(new Set(bookings.map(b => b.Salesperson).filter(Boolean))).sort();
 
-  function formatCaseType(booking: Bookings): string {
+  function formatCaseType(booking: EnhancedBooking): string {
     const rawType = (booking.Type || '').toUpperCase().replace(/\s+/g, '').trim();
     if (rawType === 'REMOVAL') return 'Removal';
     if (rawType === 'DEMO') return 'Demo';
-    if (rawType === 'LONGTERM') return 'Long Term';
+    if (rawType === 'LONGTERM') return 'LONGTERM';
     if (rawType === 'CANCELED') return 'Canceled';
     return '';
   }
@@ -78,22 +77,30 @@ export default function BookingsDashboardPage() {
   };
 
   const typeBadges: Record<string, string> = {
-    'Long Term': 'bg-purple-500/10 text-purple-600 border border-purple-500/20',
+    'LONGTERM': 'bg-purple-500/10 text-purple-600 border border-purple-500/20 font-mono tracking-tighter',
     'Demo': 'bg-amber-500/10 text-amber-600 border border-amber-500/20',
-    'Removal': 'bg-rose-500/10 text-rose-600 border border-rose-500/20',
+    'Removal': 'bg-slate-500/10 text-slate-600 border border-slate-500/20', // 🌟 Non-red clean neutral slate style
     'Canceled': 'bg-error/10 text-error border border-error/20 font-bold'
   };
 
-  const toggleRowExpansion = (id: string) => {
-    setExpandedBookingId(expandedBookingId === id ? null : id);
+  const toggleRowExpansion = (booking: EnhancedBooking) => {
+    const id = booking.BookingID;
+    if (expandedBookingId === id) {
+      setExpandedBookingId(null);
+    } else {
+      setExpandedBookingId(id);
+      // Auto-select the first available MRN tracking partition
+      if (booking.PatientUsages.length > 0 && !selectedMRNTabs[id]) {
+        setSelectedMRNTabs(prev => ({ ...prev, [id]: booking.PatientUsages[0].MRN }));
+      }
+    }
   };
 
   return (
     <div className="w-full p-2 font-sans">
-      
       <div className="mb-6 pb-2 border-b border-base-300">
         <h1 className="text-xl font-black tracking-tight text-base-content">Surgical Bookings Registry</h1>
-        <p className="text-xs font-mono opacity-50 mt-0.5">Real-time scheduling workflows compiled directly from database logs</p>
+        <p className="text-xs font-mono opacity-50 mt-0.5">Real-time workflows tracked directly from integrated logs</p>
       </div>
 
       {errorMessage && (
@@ -102,7 +109,7 @@ export default function BookingsDashboardPage() {
         </div>
       )}
 
-      {/* Filters Panel Grid */}
+      {/* Filters */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-6 p-4 bg-base-100 border border-base-300 rounded-xl shadow-sm">
         <div className="flex flex-col gap-1">
           <label className="text-[10px] font-mono uppercase opacity-50 font-bold">Search Metadata</label>
@@ -120,7 +127,7 @@ export default function BookingsDashboardPage() {
           <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="select select-sm select-bordered font-semibold text-xs bg-base-50 w-full">
             <option value="all">All Types</option>
             <option value="empty">Standard / Empty</option>
-            <option value="long term">Long Term</option>
+            <option value="longterm">LONGTERM</option>
             <option value="demo">Demo</option>
             <option value="removal">Removal</option>
             <option value="canceled">Canceled</option>
@@ -128,7 +135,7 @@ export default function BookingsDashboardPage() {
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="text-[10px] font-mono uppercase opacity-50 font-bold">Log Lifecycle Status</label>
+          <label className="text-[10px] font-mono uppercase opacity-50 font-bold">Log Status</label>
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="select select-sm select-bordered font-semibold text-xs bg-base-50 w-full">
             <option value="all">All Lifecycles</option>
             <option value="pending">Pending</option>
@@ -140,7 +147,7 @@ export default function BookingsDashboardPage() {
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="text-[10px] font-mono uppercase opacity-50 font-bold">Clinical Hospital</label>
+          <label className="text-[10px] font-mono uppercase opacity-50 font-bold">Hospital</label>
           <select value={hospitalFilter} onChange={(e) => setHospitalFilter(e.target.value)} className="select select-sm select-bordered font-semibold text-xs bg-base-50 w-full">
             <option value="all">All Hospitals ({uniqueHospitals.length})</option>
             {uniqueHospitals.map(h => <option key={h} value={h}>{h}</option>)}
@@ -163,7 +170,7 @@ export default function BookingsDashboardPage() {
         </div>
       ) : filteredBookings.length === 0 ? (
         <div className="p-12 text-center bg-base-100 rounded-xl border border-base-300 italic opacity-40 text-xs">
-          No records matching active tracking criteria metrics located.
+          No matching records located.
         </div>
       ) : (
         <div className="border border-base-300 rounded-xl overflow-hidden bg-base-100 shadow-sm overflow-x-auto">
@@ -176,7 +183,7 @@ export default function BookingsDashboardPage() {
                 <th className="p-3">Type</th>
                 <th className="p-3">Hospital Destination</th>
                 <th className="p-3">Clinical Surgeon</th>
-                <th className="p-3">Patient MRN</th>
+                <th className="p-3">Patient MRN(s)</th>
                 <th className="p-3">Sales Person</th>
                 <th className="p-3 text-center">Status</th>
               </tr>
@@ -186,30 +193,26 @@ export default function BookingsDashboardPage() {
                 const currentType = formatCaseType(booking);
                 const displayStatus = (booking.Status || '').trim();
                 const rawStatusKey = displayStatus.toLowerCase();
-                const mrnVal = booking["Patient MRN"];
                 const isExpanded = expandedBookingId === booking.BookingID;
 
-                // Split strings if they are comma-separated sets
                 const requestedSetsArray = booking["Requested Sets"]?.split(',').map(s => s.trim()).filter(Boolean) || [];
                 const selectedSetsArray = booking["Selected Sets"]?.split(',').map(s => s.trim()).filter(Boolean) || [];
 
+                // Load active selected MRN slice data object info
+                const activeMRNString = selectedMRNTabs[booking.BookingID] || (booking.PatientUsages[0]?.MRN);
+                const activeUsageDetails = booking.PatientUsages.find(u => u.MRN === activeMRNString);
+
                 return (
-                  <>
-                    {/* 📊 Main Row */}
+                  <Fragment key={booking.BookingID}>
                     <tr 
-                      key={booking.BookingID} 
-                      onClick={() => toggleRowExpansion(booking.BookingID)}
+                      onClick={() => toggleRowExpansion(booking)}
                       className={`hover:bg-base-50/60 transition-colors cursor-pointer ${isExpanded ? 'bg-base-50/80' : ''}`}
                     >
                       <td className="p-3 text-center text-base-content/40 font-bold text-sm">
                         {isExpanded ? '−' : '+'}
                       </td>
-                      <td className="p-3 font-mono font-black text-primary select-all">
-                        {booking.BookingID}
-                      </td>
-                      <td className="p-3 font-mono text-[11px] font-bold text-base-content/70">
-                        {booking.CaseDate || '—'}
-                      </td>
+                      <td className="p-3 font-mono font-black text-primary select-all">{booking.BookingID}</td>
+                      <td className="p-3 font-mono text-[11px] font-bold text-base-content/70">{booking.CaseDate || '—'}</td>
                       <td className="p-3">
                         {currentType ? (
                           <span className={`badge badge-sm font-bold px-2 py-2 rounded text-[10px] uppercase tracking-wide ${typeBadges[currentType] || 'bg-base-200'}`}>
@@ -222,17 +225,19 @@ export default function BookingsDashboardPage() {
                       <td className="p-3 font-semibold">{booking.Hospital}</td>
                       <td className="p-3">Dr. {booking.Doctor || 'Not Specified'}</td>
                       <td className="p-3 font-mono">
-                        {mrnVal && mrnVal.trim() !== '' ? (
-                          <span className="bg-primary/5 text-primary font-bold px-2 py-0.5 rounded border border-primary/10 text-[11px]">
-                            {mrnVal}
-                          </span>
-                        ) : (
-                          <span className="opacity-30 italic text-[11px]">Unassigned</span>
-                        )}
+                        <div className="flex flex-wrap gap-1 max-w-[180px]">
+                          {booking.PatientUsages.length > 0 ? (
+                            booking.PatientUsages.map(u => (
+                              <span key={u.MRN} className="bg-primary/5 text-primary font-bold px-1.5 py-0.5 rounded border border-primary/10 text-[10px]">
+                                {u.MRN}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="opacity-30 italic text-[11px]">Unassigned</span>
+                          )}
+                        </div>
                       </td>
-                      <td className="p-3">
-                        <span className="font-semibold text-base-content/80">{booking.Salesperson || '—'}</span>
-                      </td>
+                      <td className="p-3"><span className="font-semibold text-base-content/80">{booking.Salesperson || '—'}</span></td>
                       <td className="p-3 text-center">
                         <span className={`badge badge-sm font-mono px-2.5 py-2 text-[10px] uppercase tracking-wider ${statusBadges[rawStatusKey] || 'bg-base-200 text-base-content'}`}>
                           {rawStatusKey === 'usage received' ? 'Used' : displayStatus || 'Pending'}
@@ -240,95 +245,164 @@ export default function BookingsDashboardPage() {
                       </td>
                     </tr>
 
-                    {/* 🔓 Dropdown Details Drawer */}
+                    {/* Expandable Box */}
                     {isExpanded && (
-                      <tr className="bg-base-50/30 transition-all">
-                        <td colSpan={9} className="p-4 border-l-2 border-primary bg-base-100/40">
-                          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 text-xs text-base-content/80">
+                      <tr className="bg-base-50/20">
+                        <td colSpan={9} className="p-4 border-l-2 border-primary bg-base-100/60">
+                          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
                             
-                            {/* Left Column: Set Allocations */}
-                            <div className="space-y-3 bg-base-100 p-3 rounded-xl border border-base-200 shadow-xs">
-                              <div>
-                                <h4 className="text-[10px] uppercase font-mono tracking-wider text-base-content/50 font-black mb-1.5">Requested Kit Inventory</h4>
-                                {requestedSetsArray.length > 0 ? (
-                                  <div className="flex flex-wrap gap-1">
-                                    {requestedSetsArray.map((set, idx) => (
-                                      <span key={idx} className="bg-base-200/80 px-2 py-1 rounded font-mono text-[11px] border border-base-300 font-semibold">{set}</span>
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <p className="italic opacity-40 font-mono text-[11px]">No initial requested set allocations specified.</p>
-                                )}
+                            {/* Left Section: Set Requirements & Special Requests Container */}
+                            <div className="lg:col-span-5 space-y-4">
+                              <div className="bg-base-100 p-3.5 rounded-xl border border-base-200 shadow-xs space-y-3">
+                                <div>
+                                  <h4 className="text-[10px] uppercase font-mono tracking-wider text-base-content/50 font-black mb-1.5">Requested Kit Inventory</h4>
+                                  {requestedSetsArray.length > 0 ? (
+                                    <div className="flex flex-wrap gap-1">
+                                      {requestedSetsArray.map((set, idx) => (
+                                        <span key={idx} className="bg-base-200 px-2 py-1 rounded font-mono text-[11px] border border-base-300 font-semibold">{set}</span>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <p className="italic opacity-40 font-mono text-[11px]">No sets requested.</p>
+                                  )}
+                                </div>
+                                <div className="pt-2.5 border-t border-base-200">
+                                  <h4 className="text-[10px] uppercase font-mono tracking-wider text-base-content/50 font-black mb-1.5">Selected / Dispatched Sets</h4>
+                                  {selectedSetsArray.length > 0 ? (
+                                    <div className="flex flex-wrap gap-1">
+                                      {selectedSetsArray.map((set, idx) => (
+                                        <span key={idx} className="bg-info/5 text-info px-2 py-1 rounded font-mono text-[11px] border border-info/10 font-bold">{set}</span>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <p className="italic opacity-40 font-mono text-[11px]">Pending delivery scans.</p>
+                                  )}
+                                </div>
                               </div>
-                              <div className="pt-2 border-t border-base-200">
-                                <h4 className="text-[10px] uppercase font-mono tracking-wider text-base-content/50 font-black mb-1.5">Selected / Dispatched Sets</h4>
-                                {selectedSetsArray.length > 0 ? (
-                                  <div className="flex flex-wrap gap-1">
-                                    {selectedSetsArray.map((set, idx) => (
-                                      <span key={idx} className="bg-info/5 text-info px-2 py-1 rounded font-mono text-[11px] border border-info/10 font-bold">{set}</span>
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <p className="italic opacity-40 font-mono text-[11px]">Pending delivery verification scan logs.</p>
-                                )}
-                              </div>
-                            </div>
 
-                            {/* Middle Column: Clinical Usages & Notes */}
-                            <div className="space-y-2 bg-base-100 p-3 rounded-xl border border-base-200 shadow-xs">
-                              <div>
-                                <h4 className="text-[10px] uppercase font-mono tracking-wider text-base-content/50 font-black mb-0.5">Patient Tracking Scope</h4>
-                                <p className="font-mono text-xs font-bold text-base-content">MRN Reference: <span className="text-primary">{mrnVal || 'Unassigned'}</span></p>
-                              </div>
-                              <div className="pt-2 border-t border-base-200">
-                                <h4 className="text-[10px] uppercase font-mono tracking-wider text-base-content/50 font-black mb-0.5">Special Logistics Requests</h4>
-                                <p className="italic bg-base-50 p-2 rounded border border-base-200 text-base-content/70 font-medium">
-                                  {booking["Special Request"]?.trim() || "No explicit instructions appended."}
+                              {/* Special Request Relocated & Highlighted */}
+                              <div className="bg-amber-500/5 border border-amber-500/20 p-3.5 rounded-xl shadow-xs">
+                                <h4 className="text-[10px] uppercase font-mono tracking-wider text-amber-700 font-black mb-1 flex items-center gap-1">
+                                  ⚠️ Special Logistics Instructions
+                                </h4>
+                                <p className="text-amber-900 font-medium text-xs leading-relaxed select-all">
+                                  {booking["Special Request"]?.trim() || "No custom handling/delivery requests appended to this surgical file."}
                                 </p>
                               </div>
-                              {booking["Delivery Note"] && (
-                                <div className="pt-1">
-                                  <h4 className="text-[10px] uppercase font-mono tracking-wider text-base-content/50 font-black mb-0.5">Delivery Documentation Ref</h4>
-                                  <a href={booking["Delivery Note Link"] || "#"} target="_blank" rel="noreferrer" className="text-primary font-bold underline font-mono text-[11px] block hover:text-primary-focus">
-                                    📄 {booking["Delivery Note"]}
-                                  </a>
-                                </div>
-                              )}
                             </div>
 
-                            {/* Right Column: Usage Images Proofing */}
-                            <div className="bg-base-100 p-3 rounded-xl border border-base-200 shadow-xs">
-                              <h4 className="text-[10px] uppercase font-mono tracking-wider text-base-content/50 font-black mb-2">Usage Photo Ledger Proof</h4>
-                              <div className="grid grid-cols-2 gap-2">
-                                {booking.UsagePhoto ? (
-                                  <a href={booking.UsagePhoto} target="_blank" rel="noreferrer" className="group block relative border border-base-300 rounded-lg overflow-hidden aspect-video bg-base-50 hover:border-primary transition-colors">
-                                    <img src={booking.UsagePhoto} alt="Usage Ledger 1" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200" />
-                                    <span className="absolute bottom-1 left-1 bg-black/60 text-white font-mono text-[8px] px-1.5 py-0.5 rounded font-bold">IMAGE_01 🔗</span>
-                                  </a>
-                                ) : (
-                                  <div className="border border-dashed border-base-300 rounded-lg aspect-video flex items-center justify-center text-[10px] font-mono opacity-40 italic bg-base-50">
-                                    No photo 1
-                                  </div>
-                                )}
+                            {/* Right Section: Multi-MRN Sub-Tabs Picker Matrix */}
+                            <div className="lg:col-span-7 bg-base-100 border border-base-200 rounded-xl p-4 shadow-xs flex flex-col">
+                              <h4 className="text-[10px] uppercase font-mono tracking-wider text-base-content/50 font-black mb-2.5">
+                                Select Patient Record File Partition
+                              </h4>
 
-                                {booking.UsagePhoto2 ? (
-                                  <a href={booking.UsagePhoto2} target="_blank" rel="noreferrer" className="group block relative border border-base-300 rounded-lg overflow-hidden aspect-video bg-base-50 hover:border-primary transition-colors">
-                                    <img src={booking.UsagePhoto2} alt="Usage Ledger 2" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200" />
-                                    <span className="absolute bottom-1 left-1 bg-black/60 text-white font-mono text-[8px] px-1.5 py-0.5 rounded font-bold">IMAGE_02 🔗</span>
-                                  </a>
-                                ) : (
-                                  <div className="border border-dashed border-base-300 rounded-lg aspect-video flex items-center justify-center text-[10px] font-mono opacity-40 italic bg-base-50">
-                                    No photo 2
-                                  </div>
-                                )}
+                              {/* MRN Tab Bars */}
+                              <div className="flex flex-wrap gap-1.5 border-b border-base-200 pb-2 mb-3">
+                                {booking.PatientUsages.map((pu) => {
+                                  const isActive = activeMRNString === pu.MRN;
+                                  return (
+                                    <button
+                                      key={pu.MRN}
+                                      type="button"
+                                      onClick={() => setSelectedMRNTabs(prev => ({ ...prev, [booking.BookingID]: pu.MRN }))}
+                                      className={`px-3 py-1.5 rounded-md font-mono text-xs font-bold transition-all border ${
+                                        isActive 
+                                          ? 'bg-primary text-primary-content border-primary' 
+                                          : 'bg-base-100 hover:bg-base-200 text-base-content/70 border-base-300'
+                                      }`}
+                                    >
+                                      📂 MRN: {pu.MRN}
+                                    </button>
+                                  );
+                                })}
                               </div>
+
+                              {/* Active Tab Segment Frame */}
+                              {activeUsageDetails ? (
+                                <div className="grid grid-cols-1 md:grid-cols-12 gap-4 flex-1">
+                                  
+                                  {/* Itemized consumption list */}
+                                  <div className="md:col-span-7 space-y-2">
+                                    <h5 className="text-[10px] font-mono font-bold text-base-content/60 uppercase">Consumed Implant & Instrument Matrix</h5>
+                                    {activeUsageDetails.Items.length > 0 ? (
+                                      <div className="border border-base-200 rounded-lg overflow-hidden max-h-[160px] overflow-y-auto">
+                                        <table className="table table-compact w-full text-[11px]">
+                                          <thead className="bg-base-50 font-mono text-[9px] uppercase border-b border-base-200 opacity-60">
+                                            <tr>
+                                              <th className="p-1.5">Code</th>
+                                              <th className="p-1.5">Description</th>
+                                              <th className="p-1.5 text-center">Qty</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody className="divide-y divide-base-100 font-medium">
+                                            {activeUsageDetails.Items.map((itm, i) => (
+                                              <tr key={i} className="hover:bg-base-50/50">
+                                                <td className="p-1.5 font-mono text-primary font-bold">{itm.ItemCode}</td>
+                                                <td className="p-1.5 text-base-content/80 truncate max-w-[140px]">{itm.Description}</td>
+                                                <td className="p-1.5 text-center font-mono font-bold bg-base-50/40">{itm.Quantity}</td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    ) : (
+                                      <div className="p-6 text-center border border-dashed border-base-200 bg-base-50/40 rounded-lg italic text-base-content/40">
+                                        No itemized quantities logged for this MRN index yet.
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* Multi-MRN image viewer panel link */}
+                                  <div className="md:col-span-5 flex flex-col justify-between">
+                                    <div>
+                                      <h5 className="text-[10px] font-mono font-bold text-base-content/60 uppercase mb-2">Usage Photo Verification</h5>
+                                      {activeUsageDetails.PhotoUrl ? (
+                                        <a 
+                                          href={activeUsageDetails.PhotoUrl} 
+                                          target="_blank" 
+                                          rel="noreferrer" 
+                                          className="group block relative border border-base-300 rounded-lg overflow-hidden aspect-video bg-base-50 hover:border-primary transition-colors"
+                                        >
+                                          <img 
+                                            src={activeUsageDetails.PhotoUrl} 
+                                            alt={`Usage MRN ${activeUsageDetails.MRN}`} 
+                                            className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-150" 
+                                          />
+                                          <span className="absolute bottom-1 right-1 bg-black/70 text-white font-mono text-[8px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">
+                                            Open Full Resolution 🔗
+                                          </span>
+                                        </a>
+                                      ) : (
+                                        <div className="border border-dashed border-base-300 rounded-lg aspect-video flex items-center justify-center text-[10px] font-mono opacity-40 italic bg-base-50">
+                                          No verification photo saved
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {booking["Delivery Note"] && (
+                                      <div className="mt-2 pt-2 border-t border-base-100">
+                                        <a href={booking["Delivery Note Link"] || "#"} target="_blank" rel="noreferrer" className="text-primary font-bold underline font-mono text-[10px] block truncate hover:text-primary-focus">
+                                          📄 Note: {booking["Delivery Note"]}
+                                        </a>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                </div>
+                              ) : (
+                                <div className="text-center italic opacity-30 p-4 text-xs font-mono">
+                                  Select an MRN to view clinical audit breakdown details.
+                                </div>
+                              )}
+
                             </div>
 
                           </div>
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 );
               })}
             </tbody>
