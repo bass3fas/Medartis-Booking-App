@@ -21,31 +21,46 @@ export type EnhancedBooking = Bookings & {
   PatientUsages: PatientUsageDetails[];
 };
 
-// Formats relative Google Drive / AppSheet paths into full authorized content streaming image URLs
-function buildAppSheetImageUrl(rawPath: string): string {
-  if (!rawPath || rawPath.trim() === '') return '';
-  if (rawPath.startsWith('http')) return rawPath;
-  
-  const cleanPath = rawPath.trim();
-  const appId = process.env.APPSHEET_APP_ID || ''; 
-  const tableName = encodeURIComponent('Usage');
-  const columnName = encodeURIComponent('UsagePhoto');
-  const fileName = encodeURIComponent(cleanPath);
+// 🔥 Synchronized with getUsagesAction.ts to stream clear media blocks accurately
+function buildAppSheetImageUrl(fileName: string): string {
+  if (!fileName || fileName.trim() === '') return '';
+  if (fileName.startsWith('http')) return fileName;
 
-  return `https://www.appsheet.com/template/gettablefileurl?appName=${appId}&tableName=${tableName}&columnName=${columnName}&fileName=${fileName}&width=1000`;
+  const encodedFile = encodeURIComponent(fileName.trim());
+  return `https://www.appsheet.com/image/getimageurl?appName=MedartisPhase1-5435197&tableName=Usage%20Photos&fileName=${encodedFile}&width=1000`;
 }
 
 export async function fetchBookingsLog(): Promise<{ success: boolean; data: EnhancedBooking[]; error?: string }> {
   try {
-    const rawBookings = await getSheetRows('Bookings!A1:Z');
-    const rawUsages = await getSheetRows('Usage!A1:Z'); // Pull detailed usages ledger
+    const [rawBookings, rawUsages, rawPhotos, rawParts] = await Promise.all([
+      getSheetRows('Bookings!A1:Z'),
+      getSheetRows('Usage!A1:Z'),
+      getSheetRows("'Usage Photos'!A1:Z"),
+      getSheetRows('PartsMaster!A1:Z')
+    ]);
 
     if (rawBookings.length < 2) return { success: true, data: [] };
 
     const [bookingHeaders, ...bookingRows] = rawBookings;
     const [usageHeaders, ...usageRows] = rawUsages;
+    const [photoHeaders, ...photoRows] = rawPhotos;
+    const [partsHeaders, ...partsRows] = rawParts;
 
-    // Parse the items from the Usage sheet
+    // 1. Build Description Reference Map
+    const partsDescriptionMap: Record<string, string> = {};
+    if (partsHeaders && partsRows) {
+      const partNumIdx = partsHeaders.indexOf('PartNumber');
+      const descIdx = partsHeaders.indexOf('Description');
+      if (partNumIdx !== -1 && descIdx !== -1) {
+        partsRows.forEach(row => {
+          if (row[partNumIdx]) {
+            partsDescriptionMap[row[partNumIdx].toString().trim().toLowerCase()] = row[descIdx] || '';
+          }
+        });
+      }
+    }
+
+    // 2. Parse Usage Row Dictionary Logs
     const usageItemsParsed = usageRows.map(row => {
       const item: any = {};
       usageHeaders.forEach((h, i) => {
@@ -54,6 +69,16 @@ export async function fetchBookingsLog(): Promise<{ success: boolean; data: Enha
       return item;
     });
 
+    // 3. Parse Standalone Verified Photo Records
+    const photosParsed = photoRows.map(row => {
+      const obj: any = {};
+      photoHeaders.forEach((h, i) => {
+        obj[h] = row[i] !== undefined ? row[i].toString().trim() : '';
+      });
+      return obj;
+    });
+
+    // 4. Group and cross-map components with bookings
     const bookingsList: EnhancedBooking[] = bookingRows
       .map((row) => {
         const item: any = {};
@@ -63,13 +88,13 @@ export async function fetchBookingsLog(): Promise<{ success: boolean; data: Enha
 
         const bID = item.BookingID || '';
 
-        // 🧬 Compile Multiple MRNs & corresponding itemized usage sets
+        // Extract associated rows tracking this booking ID context
         const associatedUsages = usageItemsParsed.filter(u => u.BookingID === bID);
         
-        // Find all distinct MRNs listed under this specific booking inside the Usage tab
+        // Identify unique MRNs tied to this booking
         const uniqueMRNsInUsage = Array.from(new Set(associatedUsages.map(u => u.PatientMRN || u.MRN).filter(Boolean))) as string[];
         
-        // If no explicit Usage entries exist yet, fall back to the initial Bookings row definition
+        // Fallback fallback fallback if no logs exist yet
         if (uniqueMRNsInUsage.length === 0 && item["Patient MRN"]) {
           const mainMRNs = item["Patient MRN"].split(',').map((m: string) => m.trim()).filter(Boolean);
           mainMRNs.forEach((m: string) => {
@@ -80,18 +105,28 @@ export async function fetchBookingsLog(): Promise<{ success: boolean; data: Enha
         const patientUsages: PatientUsageDetails[] = uniqueMRNsInUsage.map(mrn => {
           const mrnSpecificRows = associatedUsages.filter(u => (u.PatientMRN || u.MRN) === mrn);
           
-          // Fall back to main sheet links if specific sub-usage image paths aren't found
-          const rawPhoto1 = mrnSpecificRows.find(u => u.UsagePhoto)?.UsagePhoto || item.UsagePhoto || '';
+          // Look up corresponding image allocations via the 'Usage Photos' sheet context
+          const photoMatch = photosParsed.find(p => p.BookingID === bID && (p.MRN === mrn || p.PatientMRN === mrn)) 
+                             || mrnSpecificRows.find(u => u.Photo || u.UsagePhoto);
           
-          const items: UsageItem[] = mrnSpecificRows.map(u => ({
-            ItemCode: u.ItemCode || u.Item_Code || '—',
-            Description: u.Description || u.ItemName || '—',
-            Quantity: parseInt(u.Quantity || u.Qty || '1', 10) || 0
-          })).filter(i => i.ItemCode !== '—');
+          const rawPhotoFile = photoMatch ? (photoMatch.Photo || photoMatch.UsagePhoto || '') : '';
+
+          const items: UsageItem[] = mrnSpecificRows.map(u => {
+            const pNum = u.PartNumber || u.ItemCode || '';
+            let desc = u.Description || '';
+            if (!desc || desc.trim() === '') {
+              desc = partsDescriptionMap[pNum.toLowerCase()] || '—';
+            }
+            return {
+              ItemCode: pNum || '—',
+              Description: desc,
+              Quantity: parseInt(u.QtyUsed || u.Quantity || '1', 10) || 0 // 🌟 Correct field pointer fallback matching tracking logs
+            };
+          }).filter(i => i.ItemCode !== '—');
 
           return {
             MRN: mrn,
-            PhotoUrl: buildAppSheetImageUrl(rawPhoto1),
+            PhotoUrl: buildAppSheetImageUrl(rawPhotoFile),
             Items: items
           };
         });
@@ -130,7 +165,7 @@ export async function fetchBookingsLog(): Promise<{ success: boolean; data: Enha
 
     return { success: true, data: sortedBookings };
   } catch (err: any) {
-    console.error('Error fetching Bookings data matrix payload:', err);
+    console.error('Error compiling detailed usage vectors matrix:', err);
     return { success: false, data: [], error: err.message };
   }
 }

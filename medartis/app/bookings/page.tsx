@@ -10,7 +10,6 @@ export default function BookingsDashboardPage() {
   const [errorMessage, setErrorMessage] = useState('');
   
   const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
-  // Track selected MRN sub-tab index within specific Booking IDs
   const [selectedMRNTabs, setSelectedMRNTabs] = useState<Record<string, string>>({});
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -26,7 +25,7 @@ export default function BookingsDashboardPage() {
       if (res.success) {
         setBookings(res.data);
       } else {
-        setErrorMessage(res.error || 'Failed to sync structural booking tables.');
+        setErrorMessage(res.error || 'Failed to sync data matrices.');
       }
       setLoading(false);
     }
@@ -79,7 +78,7 @@ export default function BookingsDashboardPage() {
   const typeBadges: Record<string, string> = {
     'LONGTERM': 'bg-purple-500/10 text-purple-600 border border-purple-500/20 font-mono tracking-tighter',
     'Demo': 'bg-amber-500/10 text-amber-600 border border-amber-500/20',
-    'Removal': 'bg-slate-500/10 text-slate-600 border border-slate-500/20', // 🌟 Non-red clean neutral slate style
+    'Removal': 'bg-slate-500/10 text-slate-600 border border-slate-500/20',
     'Canceled': 'bg-error/10 text-error border border-error/20 font-bold'
   };
 
@@ -89,7 +88,6 @@ export default function BookingsDashboardPage() {
       setExpandedBookingId(null);
     } else {
       setExpandedBookingId(id);
-      // Auto-select the first available MRN tracking partition
       if (booking.PatientUsages.length > 0 && !selectedMRNTabs[id]) {
         setSelectedMRNTabs(prev => ({ ...prev, [id]: booking.PatientUsages[0].MRN }));
       }
@@ -109,7 +107,7 @@ export default function BookingsDashboardPage() {
         </div>
       )}
 
-      {/* Filters */}
+      {/* Filter Controls Panel */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-6 p-4 bg-base-100 border border-base-300 rounded-xl shadow-sm">
         <div className="flex flex-col gap-1">
           <label className="text-[10px] font-mono uppercase opacity-50 font-bold">Search Metadata</label>
@@ -198,7 +196,6 @@ export default function BookingsDashboardPage() {
                 const requestedSetsArray = booking["Requested Sets"]?.split(',').map(s => s.trim()).filter(Boolean) || [];
                 const selectedSetsArray = booking["Selected Sets"]?.split(',').map(s => s.trim()).filter(Boolean) || [];
 
-                // Load active selected MRN slice data object info
                 const activeMRNString = selectedMRNTabs[booking.BookingID] || (booking.PatientUsages[0]?.MRN);
                 const activeUsageDetails = booking.PatientUsages.find(u => u.MRN === activeMRNString);
 
@@ -245,7 +242,7 @@ export default function BookingsDashboardPage() {
                       </td>
                     </tr>
 
-                    {/* Expandable Box */}
+                    {/* Expandable Box Frame */}
                     {isExpanded && (
                       <tr className="bg-base-50/20">
                         <td colSpan={9} className="p-4 border-l-2 border-primary bg-base-100/60">
@@ -280,7 +277,7 @@ export default function BookingsDashboardPage() {
                                 </div>
                               </div>
 
-                              {/* Special Request Relocated & Highlighted */}
+                              {/* Special Request Relocated Below Sets & Highlighted */}
                               <div className="bg-amber-500/5 border border-amber-500/20 p-3.5 rounded-xl shadow-xs">
                                 <h4 className="text-[10px] uppercase font-mono tracking-wider text-amber-700 font-black mb-1 flex items-center gap-1">
                                   ⚠️ Special Logistics Instructions
@@ -291,13 +288,13 @@ export default function BookingsDashboardPage() {
                               </div>
                             </div>
 
-                            {/* Right Section: Multi-MRN Sub-Tabs Picker Matrix */}
+                            {/* Right Section: Individual MRN Tab Workspace */}
                             <div className="lg:col-span-7 bg-base-100 border border-base-200 rounded-xl p-4 shadow-xs flex flex-col">
                               <h4 className="text-[10px] uppercase font-mono tracking-wider text-base-content/50 font-black mb-2.5">
                                 Select Patient Record File Partition
                               </h4>
 
-                              {/* MRN Tab Bars */}
+                              {/* MRN Navigation Tab List */}
                               <div className="flex flex-wrap gap-1.5 border-b border-base-200 pb-2 mb-3">
                                 {booking.PatientUsages.map((pu) => {
                                   const isActive = activeMRNString === pu.MRN;
@@ -318,11 +315,11 @@ export default function BookingsDashboardPage() {
                                 })}
                               </div>
 
-                              {/* Active Tab Segment Frame */}
+                              {/* Selected MRN Segment Pane */}
                               {activeUsageDetails ? (
                                 <div className="grid grid-cols-1 md:grid-cols-12 gap-4 flex-1">
                                   
-                                  {/* Itemized consumption list */}
+                                  {/* Itemized consumption ledger */}
                                   <div className="md:col-span-7 space-y-2">
                                     <h5 className="text-[10px] font-mono font-bold text-base-content/60 uppercase">Consumed Implant & Instrument Matrix</h5>
                                     {activeUsageDetails.Items.length > 0 ? (
@@ -353,7 +350,7 @@ export default function BookingsDashboardPage() {
                                     )}
                                   </div>
 
-                                  {/* Multi-MRN image viewer panel link */}
+                                  {/* Verification view link frame */}
                                   <div className="md:col-span-5 flex flex-col justify-between">
                                     <div>
                                       <h5 className="text-[10px] font-mono font-bold text-base-content/60 uppercase mb-2">Usage Photo Verification</h5>
@@ -381,7 +378,7 @@ export default function BookingsDashboardPage() {
                                     </div>
 
                                     {booking["Delivery Note"] && (
-                                      <div className="mt-2 pt-2 border-t border-base-100">
+                                      <div className="mt-2 pt-2 border-t border-t-base-200">
                                         <a href={booking["Delivery Note Link"] || "#"} target="_blank" rel="noreferrer" className="text-primary font-bold underline font-mono text-[10px] block truncate hover:text-primary-focus">
                                           📄 Note: {booking["Delivery Note"]}
                                         </a>
