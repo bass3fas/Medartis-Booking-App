@@ -2,6 +2,7 @@
 'use client';
 
 import { useState, useEffect, Fragment } from 'react';
+import Link from 'next/link';
 import { fetchBookingsLog, EnhancedBooking } from '../actions/getBookingsAction';
 import { BookingSet } from '../types/interfaces';
 import SetDetailsDrawer from '../components/SetDetailsDrawer';
@@ -354,7 +355,12 @@ export default function BookingsDashboardPage() {
                                             <div className="flex items-center justify-between">
                                               <div>
                                                 <p className="text-[10px] uppercase font-mono tracking-wider text-base-content/50 font-black">Set Photo Preview</p>
-                                                <p className="font-mono text-xs font-bold text-base-content">{selectedSet.SetID}</p>
+                                                <Link
+                                                  href={`/sets?setId=${encodeURIComponent(selectedSet.SetID)}`}
+                                                  className="font-mono text-xs font-bold text-primary underline-offset-2 hover:underline"
+                                                >
+                                                  {selectedSet.SetID}
+                                                </Link>
                                               </div>
                                               <button
                                                 type="button"
@@ -442,7 +448,12 @@ export default function BookingsDashboardPage() {
                                   <div className="md:col-span-7 space-y-2">
                                     <div className="border-b border-base-200 pb-1.5">
                                       <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-base-content/50">Active MRN</p>
-                                      <p className="text-sm font-black text-base-content">{activeMRNString}</p>
+                                      <Link
+                                        href={`/usages?mrn=${encodeURIComponent(activeMRNString || '')}`}
+                                        className="text-sm font-black text-primary underline-offset-2 hover:underline"
+                                      >
+                                        {activeMRNString}
+                                      </Link>
                                     </div>
                                     <h5 className="text-[10px] font-mono font-bold text-base-content/60 uppercase">Consumed Implant & Instrument Matrix</h5>
                                     {activeUsageDetails.Items.length > 0 ? (

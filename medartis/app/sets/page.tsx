@@ -2,11 +2,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import SetInventoryCard from '../components/SetInventoryCard';
 import SetDetailsDrawer from '../components/SetDetailsDrawer';
 import { fetchEnrichedSets, VirtualSet } from '../actions/getSetsAction'; // Ensure this matches your unified server file
 
 export default function SetsMatrixPage() {
+  const searchParams = useSearchParams();
   const [sets, setSets] = useState<VirtualSet[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
@@ -17,6 +19,13 @@ export default function SetsMatrixPage() {
   const [completeFilter, setCompleteFilter] = useState('all');   
   const [loanFilter, setLoanFilter] = useState('all');           
   const [locationFilter, setLocationFilter] = useState('all');   
+
+  useEffect(() => {
+    const setId = searchParams.get('setId');
+    if (setId) {
+      setSearchQuery(setId);
+    }
+  }, [searchParams]);
 
   // Drawer Control States
   const [selectedSet, setSelectedSet] = useState<VirtualSet | null>(null);

@@ -2,6 +2,7 @@
 'use client';
 
 import { useState, useEffect, Fragment } from 'react';
+import { useRouter } from 'next/navigation';
 import { VirtualSet, fetchTraysAndUsageForSet, EnrichedTray, VirtualUsage } from '../actions/getSetsAction';
 import { buildAppSheetImageUrl } from '../lib/appsheet-image-url';
 
@@ -12,12 +13,17 @@ interface DrawerProps {
 }
 
 export default function SetDetailsDrawer({ set, isOpen, onClose }: DrawerProps) {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<'trays' | 'history'>('trays');
   const [trays, setTrays] = useState<EnrichedTray[]>([]);
   const [setHistory, setSetHistory] = useState<VirtualUsage[]>([]);
   const [loading, setLoading] = useState(false);
   const [openTrayId, setOpenTrayId] = useState<string | null>(null);
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
+  
+  // State elements to give instant copy feedback indicators
+  const [copiedSetId, setCopiedSetId] = useState(false);
+  const [copiedMrn, setCopiedMrn] = useState<string | null>(null);
 
   useEffect(() => {
     if (!set || !isOpen) return;
@@ -51,6 +57,23 @@ export default function SetDetailsDrawer({ set, isOpen, onClose }: DrawerProps) 
     .map((photo) => buildAppSheetImageUrl(String(photo), 'BookingSets'))
     .filter(Boolean);
 
+  // Clipboard Copier Mechanics
+  const handleCopyText = async (text: string, type: 'set' | 'mrn') => {
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      if (type === 'set') {
+        setCopiedSetId(true);
+        setTimeout(() => setCopiedSetId(false), 1500);
+      } else {
+        setCopiedMrn(text);
+        setTimeout(() => setCopiedMrn(null), 1500);
+      }
+    } catch (err) {
+      console.error('Failed to copy to clipboard', err);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 overflow-hidden font-sans">
       <div className="absolute inset-0 bg-neutral/40 backdrop-blur-sm" onClick={onClose} />
@@ -63,7 +86,32 @@ export default function SetDetailsDrawer({ set, isOpen, onClose }: DrawerProps) 
             <div className="flex justify-between items-start">
               <div>
                 <h2 className="text-xl font-black tracking-tight">{set.SetName}</h2>
-                <p className="text-xs font-mono opacity-50 mt-0.5">SetID: {set.SetID}</p>
+                
+                {/* --- CLICKABLE/COPYABLE SET ID ELEMENT --- */}
+                <div className="flex items-center gap-2 mt-1 select-text">
+                  <button 
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onClose();
+                      router.push(`/sets?id=${encodeURIComponent(set.SetID)}`);
+                    }}
+                    className="text-xs font-mono text-primary font-bold hover:underline cursor-pointer bg-transparent border-0 p-0 text-left outline-none"
+                    title="Click to view this set in /sets view"
+                  >
+                    SetID: <span className="underline decoration-dotted hover:decoration-solid">{set.SetID}</span>
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCopyText(set.SetID, 'set');
+                    }}
+                    className="text-[10px] font-mono opacity-50 hover:opacity-100 hover:bg-base-300 px-1.5 py-0.5 bg-base-200 rounded transition-all active:scale-95 cursor-pointer"
+                  >
+                    {copiedSetId ? '✓ Copied' : 'Copy'}
+                  </button>
+                </div>
               </div>
               <button onClick={onClose} className="btn btn-sm btn-circle btn-ghost">✕</button>
             </div>
@@ -91,10 +139,29 @@ export default function SetDetailsDrawer({ set, isOpen, onClose }: DrawerProps) 
             {/* --- VISUAL SCAN ARCHIVE ATTACHMENTS GRID --- */}
             {availablePhotos.length > 0 && (
               <div className="space-y-2">
-                <h3 className="text-xs uppercase font-mono tracking-wider opacity-60 font-black">
-                  📷 Kit Scan Verification Photos ({availablePhotos.length})
-                </h3>
-                <div className="grid grid-cols-4 gap-2">
+                <div className="flex flex-col gap-0.5">
+                  <h3 className="text-xs uppercase font-mono tracking-wider opacity-60 font-black">
+                    📷 Kit Scan Verification Photos ({availablePhotos.length})
+                  </h3>
+                  
+                  {/* --- INTERACTIVE ROUTER LINK FOR THE REQUESTED PHOTO SECTION CODE --- */}
+                  <div className="mt-0.5 flex items-center gap-2">
+                    <button 
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onClose();
+                        router.push(`/sets?id=${encodeURIComponent(set.SetID)}`);
+                      }}
+                      className="text-xs font-mono text-primary font-bold hover:underline cursor-pointer bg-transparent border-0 p-0 text-left outline-none"
+                      title="Navigate directly to this set profile view"
+                    >
+                      Set Photo Preview: <span className="underline decoration-dotted hover:decoration-solid font-black">{set.SetID}</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-4 gap-2 pt-1">
                   {availablePhotos.map((url, index) => (
                     <a 
                       key={index} 
@@ -133,11 +200,52 @@ export default function SetDetailsDrawer({ set, isOpen, onClose }: DrawerProps) 
                   <div className="space-y-2">
                     {setHistory.map((log) => (
                       <div key={log.UsageID} className="p-3 bg-base-50 border border-base-200 rounded-lg text-xs flex justify-between items-center">
-                        <div>
-                          <p className="font-bold text-base-content font-mono">{log.PartNumber} - <span className="opacity-60 font-sans font-medium">{log.Description || 'Component Unit'}</span></p>
-                          <p className="text-[10px] opacity-50 font-mono mt-0.5">MRN: {log.PatientMRN} | Hospital: {log.Hospital} | Date: {log.Date}</p>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-bold text-base-content font-mono truncate">
+                            {log.PartNumber} - <span className="opacity-60 font-sans font-medium">{log.Description || 'Component Unit'}</span>
+                          </p>
+                          
+                          {/* --- CLICKABLE/COPYABLE MULTI-PATH MRN INTERFACES --- */}
+                          <div className="flex items-center gap-2 text-[10px] font-mono mt-1 text-base-content/50 select-text flex-wrap">
+                            <span>Hospital: {log.Hospital}</span>
+                            <span>|</span>
+                            <span>Date: {log.Date}</span>
+                            <span>|</span>
+                            <div className="flex items-center gap-1.5">
+                              <span>MRN:</span>
+                              {log.PatientMRN ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onClose();
+                                      router.push(`/usages?mrn=${encodeURIComponent(log.PatientMRN)}`);
+                                    }}
+                                    className="text-primary font-bold hover:underline cursor-pointer bg-transparent border-0 p-0 text-left outline-none"
+                                    title="Click to filter by this MRN in /usages"
+                                  >
+                                    <span className="underline decoration-dotted hover:decoration-solid">{log.PatientMRN}</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleCopyText(log.PatientMRN, 'mrn');
+                                    }}
+                                    className="text-[9px] opacity-60 hover:opacity-100 bg-base-200 hover:bg-base-300 px-1 rounded font-sans transition-all active:scale-95 cursor-pointer"
+                                  >
+                                    {copiedMrn === log.PatientMRN ? '✓' : 'Copy'}
+                                  </button>
+                                </>
+                              ) : (
+                                <span className="italic opacity-50">N/A</span>
+                              )}
+                            </div>
+                          </div>
+
                         </div>
-                        <div className="text-right">
+                        <div className="text-right ml-4 flex-shrink-0">
                           <span className="font-mono font-black block">Qty: {log.QtyUsed}</span>
                           <span className={`badge badge-xs font-mono font-bold mt-1 ${log.computedUsageStatus === 'Refilled' ? 'badge-success' : 'badge-warning'}`}>
                             {log.computedUsageStatus}
@@ -226,11 +334,45 @@ export default function SetDetailsDrawer({ set, isOpen, onClose }: DrawerProps) 
                                                 {item.itemHistory && item.itemHistory.length === 0 ? (
                                                   <p className="text-[11px] opacity-40 italic">No specific past logs for this part number inside this tray.</p>
                                                 ) : (
-                                                  <div className="max-h-24 overflow-y-auto border border-base-200 rounded-md bg-base-100">
+                                                  <div className="max-h-36 overflow-y-auto border border-base-200 rounded-md bg-base-100">
                                                     {item.itemHistory.map((h, hIdx) => (
-                                                      <div key={hIdx} className="p-2 text-[11px] border-b border-base-100 last:border-0 flex justify-between font-mono">
-                                                        <span>📅 {h.Date || 'No Date'} | Hosp: {h.Hospital || 'Unknown'}</span>
-                                                        <span className="font-bold text-base-content">Used: {h.QtyUsed} ({h.computedUsageStatus})</span>
+                                                      <div key={hIdx} className="p-2.5 text-[11px] border-b border-base-100 last:border-0 flex justify-between items-center font-mono hover:bg-base-50/50">
+                                                        <div className="flex flex-col gap-0.5">
+                                                          <span>📅 {h.Date || 'No Date'} | Hosp: {h.Hospital || 'Unknown'}</span>
+                                                          
+                                                          {/* --- MINI ROW MRN REDIRECTS FOR EXTENDED TIMELINE VIEW --- */}
+                                                          <div className="flex items-center gap-1.5 text-[10px] select-text">
+                                                            <span className="opacity-50">MRN:</span>
+                                                            {h.PatientMRN ? (
+                                                              <>
+                                                                <button 
+                                                                  type="button"
+                                                                  onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    onClose();
+                                                                    router.push(`/usages?mrn=${encodeURIComponent(h.PatientMRN!)}`);
+                                                                  }}
+                                                                  className="text-primary font-bold hover:underline cursor-pointer bg-transparent border-0 p-0 text-left outline-none"
+                                                                >
+                                                                  <span className="underline decoration-dotted hover:decoration-solid">{h.PatientMRN}</span>
+                                                                </button>
+                                                                <button
+                                                                  type="button"
+                                                                  onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleCopyText(h.PatientMRN!, 'mrn');
+                                                                  }}
+                                                                  className="text-[9px] opacity-50 hover:opacity-100 bg-base-200 hover:bg-base-300 px-1 rounded font-sans cursor-pointer"
+                                                                >
+                                                                  {copiedMrn === h.PatientMRN ? 'Copied' : 'Copy'}
+                                                                </button>
+                                                              </>
+                                                            ) : (
+                                                              <span className="italic opacity-40">N/A</span>
+                                                            )}
+                                                          </div>
+                                                        </div>
+                                                        <span className="font-bold text-base-content ml-2 text-right">Used: {h.QtyUsed} ({h.computedUsageStatus})</span>
                                                       </div>
                                                     ))}
                                                   </div>

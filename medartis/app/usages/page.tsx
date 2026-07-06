@@ -2,9 +2,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { fetchUsageLog, PatientMRNGroup } from '../actions/getUsagesAction';
 
 export default function GroupedUsageLogPage() {
+  const searchParams = useSearchParams();
   const [cases, setCases] = useState<PatientMRNGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
@@ -14,6 +16,14 @@ export default function GroupedUsageLogPage() {
   const [hospitalFilter, setHospitalFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'Refilled' | 'Pending to Refill'>('all'); // 🔄 Restored
   const [expandedCaseKey, setExpandedCaseKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    const mrn = searchParams.get('mrn');
+    if (mrn) {
+      setSearchQuery(mrn);
+      setExpandedCaseKey(null);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     async function syncLedger() {
