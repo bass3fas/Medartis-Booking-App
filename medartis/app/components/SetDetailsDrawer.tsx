@@ -94,7 +94,7 @@ export default function SetDetailsDrawer({ set, isOpen, onClose }: DrawerProps) 
                     onClick={(e) => {
                       e.stopPropagation();
                       onClose();
-                      router.push(`/sets?id=${encodeURIComponent(set.SetID)}`);
+                      router.push(`/sets?setId=${encodeURIComponent(set.SetID)}`);
                     }}
                     className="text-xs font-mono text-primary font-bold hover:underline cursor-pointer bg-transparent border-0 p-0 text-left outline-none"
                     title="Click to view this set in /sets view"
@@ -151,7 +151,7 @@ export default function SetDetailsDrawer({ set, isOpen, onClose }: DrawerProps) 
                       onClick={(e) => {
                         e.stopPropagation();
                         onClose();
-                        router.push(`/sets?id=${encodeURIComponent(set.SetID)}`);
+                        router.push(`/sets?setId=${encodeURIComponent(set.SetID)}`);
                       }}
                       className="text-xs font-mono text-primary font-bold hover:underline cursor-pointer bg-transparent border-0 p-0 text-left outline-none"
                       title="Navigate directly to this set profile view"
@@ -202,7 +202,19 @@ export default function SetDetailsDrawer({ set, isOpen, onClose }: DrawerProps) 
                       <div key={log.UsageID} className="p-3 bg-base-50 border border-base-200 rounded-lg text-xs flex justify-between items-center">
                         <div className="min-w-0 flex-1">
                           <p className="font-bold text-base-content font-mono truncate">
-                            {log.PartNumber} - <span className="opacity-60 font-sans font-medium">{log.Description || 'Component Unit'}</span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onClose();
+                                router.push(`/partsmaster?partNumber=${encodeURIComponent(log.PartNumber || '')}`);
+                              }}
+                              className="text-primary hover:underline bg-transparent border-0 p-0 text-left outline-none"
+                            >
+                              {log.PartNumber}
+                            </button>
+                            {' - '}
+                            <span className="opacity-60 font-sans font-medium">{log.Description || 'Component Unit'}</span>
                           </p>
                           
                           {/* --- CLICKABLE/COPYABLE MULTI-PATH MRN INTERFACES --- */}
@@ -295,7 +307,7 @@ export default function SetDetailsDrawer({ set, isOpen, onClose }: DrawerProps) 
                                 {tray.contents.map((item) => {
                                   const ideal = Number(item.IdealQty) || 0;
                                   const current = item.computedCurrentQty;
-                                  const actual = item.ActualQty !== undefined && item.ActualQty !== '' ? Number(item.ActualQty ?? 0) : ideal;
+                                  const actual = typeof item.ActualQty === 'number' ? item.ActualQty : ideal;
                                   
                                   const isMissing = current < ideal;
                                   const isItemExpanded = expandedItemId === item.ItemID;
@@ -307,7 +319,19 @@ export default function SetDetailsDrawer({ set, isOpen, onClose }: DrawerProps) 
                                         onClick={() => setExpandedItemId(isItemExpanded ? null : item.ItemID)}
                                         className="hover:bg-base-50 border-b border-base-100 last:border-0 font-medium cursor-pointer transition-colors"
                                       >
-                                        <td className="font-mono text-primary font-bold">{item.PartNumber}</td>
+                                        <td className="font-mono text-primary font-bold">
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              onClose();
+                                              router.push(`/partsmaster?partNumber=${encodeURIComponent(item.PartNumber || '')}`);
+                                            }}
+                                            className="text-primary hover:underline bg-transparent border-0 p-0 text-left outline-none"
+                                          >
+                                            {item.PartNumber}
+                                          </button>
+                                        </td>
                                         <td className="max-w-[160px] truncate opacity-70">{item.Description}</td>
                                         <td className="text-center font-mono opacity-40">{ideal}</td>
                                         <td className={`text-center font-mono font-black ${isMissing ? 'text-error' : 'text-success'}`}>{current}</td>

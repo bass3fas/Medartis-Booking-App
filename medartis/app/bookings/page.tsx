@@ -469,7 +469,11 @@ export default function BookingsDashboardPage() {
                                           <tbody className="divide-y divide-base-100 font-medium">
                                             {activeUsageDetails.Items.map((itm: { ItemCode: string; Description: string; Quantity: number }, i: number) => (
                                               <tr key={i} className="hover:bg-base-50/50">
-                                                <td className="p-1.5 font-mono text-primary font-bold">{itm.ItemCode}</td>
+                                                <td className="p-1.5 font-mono text-primary font-bold">
+                                                  <Link href={`/partsmaster?partNumber=${encodeURIComponent(itm.ItemCode || '')}`} className="hover:underline">
+                                                    {itm.ItemCode}
+                                                  </Link>
+                                                </td>
                                                 <td className="p-1.5 text-base-content/80 truncate max-w-[140px]">{itm.Description}</td>
                                                 <td className="p-1.5 text-center font-mono font-bold bg-base-50/40">{itm.Quantity}</td>
                                               </tr>

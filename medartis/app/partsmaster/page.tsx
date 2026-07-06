@@ -2,9 +2,12 @@
 'use client';
 
 import { useState, useEffect, Fragment } from 'react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { fetchPartsCatalogue, VirtualPartsMaster } from '../actions/getCatalogueAction';
 
 export default function PartNumbersCataloguePage() {
+  const searchParams = useSearchParams();
   const [parts, setParts] = useState<VirtualPartsMaster[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
@@ -16,6 +19,13 @@ export default function PartNumbersCataloguePage() {
   // Interactive UI state hooks
   const [expandedRowIndex, setExpandedRowIndex] = useState<string | null>(null);
   const [subTab, setSubTab] = useState<'allocations' | 'history'>('allocations');
+
+  useEffect(() => {
+    const partNumber = searchParams.get('partNumber');
+    if (partNumber) {
+      setSearchQuery(partNumber);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     async function syncClientMatrix() {
@@ -115,7 +125,11 @@ export default function PartNumbersCataloguePage() {
                         }} 
                         className={`hover:bg-base-50/70 font-medium transition-colors cursor-pointer ${isRowExpanded ? 'bg-base-50/50 border-l-2 border-l-primary' : ''}`}
                       >
-                        <td className="p-3 font-mono font-bold text-primary select-all">{part.PartNumber}</td>
+                        <td className="p-3 font-mono font-bold text-primary select-all">
+                          <Link href={`/partsmaster?partNumber=${encodeURIComponent(part.PartNumber || '')}`} className="hover:underline">
+                            {part.PartNumber}
+                          </Link>
+                        </td>
                         <td className="max-w-xs font-sans font-semibold text-base-content truncate" title={part.Description}>
                           {part.Description}
                         </td>
@@ -124,11 +138,11 @@ export default function PartNumbersCataloguePage() {
                         <td className="text-center font-mono opacity-50">{part.PU || 'pcs'}</td>
                         {/* Refill Qty column */}
                         <td className="text-right font-mono font-bold opacity-70">
-                          {part["Refill Stock"] !== undefined && part["Refill Stock"] !== '' ? Number(part["Refill Stock"]) : '0'}
+                          {Number(part["Refill Stock"] ?? 0)}
                         </td>
                         {/* Direct Sheet Usages Count column */}
                         <td className="text-right font-mono opacity-70">
-                          {part.Usages !== undefined && part.Usages !== '' ? Number(part.Usages) : '0'}
+                          {Number(part.Usages ?? 0)}
                         </td>
                         {/* Dynamic InSets calculated column */}
                         <td className={`text-right font-mono font-black ${part.inSetsQty === 0 ? 'text-error/80' : 'text-success'}`}>
@@ -170,7 +184,9 @@ export default function PartNumbersCataloguePage() {
                                         <div key={aIdx} className="p-3 bg-base-50 border border-base-200 rounded-lg text-xs flex justify-between items-center font-mono">
                                           <div>
                                             <p className="font-sans font-black text-base-content">{alloc.TrayName}</p>
-                                            <p className="text-[10px] opacity-40 mt-0.5">Set: {alloc.SetID} | Tray: {alloc.TrayID}</p>
+                                            <p className="text-[10px] opacity-40 mt-0.5">
+                                              Set: <Link href={`/sets?setId=${encodeURIComponent(alloc.SetID || '')}`} className="text-primary hover:underline">{alloc.SetID}</Link> | Tray: {alloc.TrayID}
+                                            </p>
                                           </div>
                                           <div className="text-right">
                                             <span className="text-[10px] block opacity-40 uppercase font-bold">Qty Inside</span>
@@ -201,7 +217,9 @@ export default function PartNumbersCataloguePage() {
                                           <div key={hIdx} className="p-3 text-xs flex justify-between items-center font-mono">
                                             <div>
                                               <p className="font-sans font-black text-base-content">{log.Hospital || 'Unknown Facility'}</p>
-                                              <p className="text-[10px] opacity-40 mt-0.5">📅 {log.Date || 'No Date Logged'} | Patient MRN: {log.PatientMRN || '—'} | BookingID: {log.BookingID}</p>
+                                              <p className="text-[10px] opacity-40 mt-0.5">
+                                                📅 {log.Date || 'No Date Logged'} | Patient MRN: {log.PatientMRN ? <Link href={`/usages?mrn=${encodeURIComponent(log.PatientMRN)}`} className="text-primary hover:underline">{log.PatientMRN}</Link> : '—'} | BookingID: {log.BookingID}
+                                              </p>
                                             </div>
                                             <div className="text-right">
                                               <span className="font-black text-base-content block">Used: {usedQty}</span>

@@ -2,8 +2,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { fetchUsageLog, PatientMRNGroup } from '../actions/getUsagesAction';
+import { fetchUsageLog } from '../actions/getUsagesAction';
+import { EnrichedUsage, PatientMRNGroup } from '../types/interfaces';
+
+interface UsageListItem extends EnrichedUsage {
+  [key: string]: unknown;
+}
 
 export default function GroupedUsageLogPage() {
   const searchParams = useSearchParams();
@@ -42,16 +48,16 @@ export default function GroupedUsageLogPage() {
   const uniqueHospitals = Array.from(new Set(cases.map(c => c.Hospital).filter(Boolean))).sort();
 
   // Multi-pipeline filtering execution logic
-  const filteredCases = cases.filter(c => {
+  const filteredCases = cases.filter((c: PatientMRNGroup) => {
     const matchesSearch = 
       c.PatientMRN.toLowerCase().includes(searchQuery.toLowerCase()) ||
       c.BookingID.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.items.some(item => (item.PartNumber || '').toLowerCase().includes(searchQuery.toLowerCase()));
+      c.items.some((item: UsageListItem) => (item.PartNumber || '').toLowerCase().includes(searchQuery.toLowerCase()));
 
     const matchesHospital = hospitalFilter === 'all' || c.Hospital === hospitalFilter;
 
     // 🔄 Evaluate structural status flags for the group container
-    const hasPendingItems = c.items.some(item => item.computedUsageStatus === 'Pending to Refill');
+    const hasPendingItems = c.items.some((item: UsageListItem) => item.computedUsageStatus === 'Pending to Refill');
     const matchesStatus = 
       statusFilter === 'all' || 
       (statusFilter === 'Pending to Refill' && hasPendingItems) || 
@@ -121,7 +127,7 @@ export default function GroupedUsageLogPage() {
           {filteredCases.map((caseGroup) => {
             const caseKey = caseGroup.groupKey;
             const isExpanded = expandedCaseKey === caseKey;
-            const pendingItemsCount = caseGroup.items.filter(i => i.computedUsageStatus === 'Pending to Refill').length;
+            const pendingItemsCount = caseGroup.items.filter((i: UsageListItem) => i.computedUsageStatus === 'Pending to Refill').length;
 
             return (
               <div 
@@ -182,11 +188,13 @@ export default function GroupedUsageLogPage() {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-base-100">
-                            {caseGroup.items.map((item) => (
+                            {caseGroup.items.map((item: UsageListItem) => (
                               <tr key={item.UsageID} className="hover:bg-base-50/50">
                                 <td className="p-2.5">
-                                  <span className="font-bold text-base-content block select-all">{item.PartNumber}</span>
-                                  <span className="text-[11px] font-sans font-semibold opacity-70 block truncate max-w-[280px]" title={item.Description}>
+                                  <Link href={`/partsmaster?partNumber=${encodeURIComponent(item.PartNumber || '')}`} className="font-bold text-primary hover:underline block select-all">
+                                    {item.PartNumber}
+                                  </Link>
+                                  <span className="text-[11px] font-sans font-semibold opacity-70 block truncate max-w-70" title={item.Description}>
                                     {item.Description || 'No description asset mapped'}
                                   </span>
                                   <span className="text-[9px] opacity-40 block">{item.TrayID}</span>
@@ -216,8 +224,8 @@ export default function GroupedUsageLogPage() {
                         </div>
                       ) : (
                         /* 📋 Updated to look like real vertical A4 clipboards */
-                        <div className="grid grid-cols-2 gap-3 max-h-[500px] overflow-y-auto p-2 bg-base-100 border border-base-300 rounded-xl shadow-sm">
-                          {caseGroup.photos.map((url, imgIdx) => (
+                        <div className="grid grid-cols-2 gap-3 max-h-125 overflow-y-auto p-2 bg-base-100 border border-base-300 rounded-xl shadow-sm">
+                          {caseGroup.photos.map((url: string, imgIdx: number) => (
                             <a 
                               key={imgIdx} 
                               href={url} 
