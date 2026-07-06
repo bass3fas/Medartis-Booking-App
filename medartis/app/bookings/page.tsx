@@ -15,6 +15,7 @@ export default function BookingsDashboardPage() {
   
   const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
   const [selectedMRNTabs, setSelectedMRNTabs] = useState<Record<string, string>>({});
+  const [selectedSetTabs, setSelectedSetTabs] = useState<Record<string, string | null>>({});
   const [activeRefView, setActiveRefView] = useState<{
     type: 'BookingSets' | 'PartsMaster' | 'PatientHistory';
     title: string;
@@ -121,6 +122,9 @@ export default function BookingsDashboardPage() {
       setExpandedBookingId(id);
       if (booking.PatientUsages.length > 0 && !selectedMRNTabs[id]) {
         setSelectedMRNTabs(prev => ({ ...prev, [id]: booking.PatientUsages[0].MRN }));
+      }
+      if (booking.RelatedBookingSets.length > 0 && !selectedSetTabs[id]) {
+        setSelectedSetTabs(prev => ({ ...prev, [id]: booking.RelatedBookingSets[0].SetID || null }));
       }
     }
   };
@@ -299,46 +303,92 @@ export default function BookingsDashboardPage() {
                                     Selected / Dispatched Sets (Interactive Reference Link)
                                   </h4>
                                   {booking.RelatedBookingSets && booking.RelatedBookingSets.length > 0 ? (
-                                    <div className="flex flex-wrap gap-1.5">
-                                      {booking.RelatedBookingSets.map((set: any, idx: number) => {
-                                        const activePhotosArray = [
-                                          set.Photo1, set.Photo2, set.Photo3,
-                                          set.Photo4, set.Photo5, set.Photo6, set.Photo7
-                                        ].filter(Boolean);
+                                    <div className="space-y-2">
+                                      <div className="flex flex-wrap gap-1.5">
+                                        {booking.RelatedBookingSets.map((set: any, idx: number) => {
+                                          const activePhotosArray = [
+                                            set.Photo1, set.Photo2, set.Photo3,
+                                            set.Photo4, set.Photo5, set.Photo6, set.Photo7
+                                          ].filter(Boolean);
+                                          const isActive = selectedSetTabs[booking.BookingID] === set.SetID;
+
+                                          return (
+                                            <button
+                                              key={idx}
+                                              type="button"
+                                              onClick={() => {
+                                                setSelectedSetTabs(prev => ({
+                                                  ...prev,
+                                                  [booking.BookingID]: isActive ? null : set.SetID
+                                                }));
+                                              }}
+                                              className={`text-left px-2.5 py-1.5 rounded font-mono text-[11px] border font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs ${
+                                                isActive
+                                                  ? 'bg-primary text-primary-content border-primary'
+                                                  : 'bg-info/10 hover:bg-info/20 text-info border-info/20'
+                                              }`}
+                                            >
+                                              📦 {set.SetID}
+                                              <span className="text-[9px] opacity-70 font-medium">({activePhotosArray.length} 📷)</span>
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+
+                                      {selectedSetTabs[booking.BookingID] && (() => {
+                                        const selectedSet = booking.RelatedBookingSets.find((item: any) => item.SetID === selectedSetTabs[booking.BookingID]);
+                                        if (!selectedSet) return null;
+
+                                        const selectedPhotos = [
+                                          selectedSet.Photo1,
+                                          selectedSet.Photo2,
+                                          selectedSet.Photo3,
+                                          selectedSet.Photo4,
+                                          selectedSet.Photo5,
+                                          selectedSet.Photo6,
+                                          selectedSet.Photo7,
+                                        ].filter((photo): photo is string => Boolean(photo)).map((photo) => buildBookingSetImageUrl(photo));
 
                                         return (
-                                          <button
-                                            key={idx}
-                                            type="button"
-                                            onClick={() => {
-                                              const formattedSetForDrawer = {
-                                                ...set,
-                                                Photo1: set.Photo1 ? buildBookingSetImageUrl(set.Photo1) : '',
-                                                Photo2: set.Photo2 ? buildBookingSetImageUrl(set.Photo2) : '',
-                                                Photo3: set.Photo3 ? buildBookingSetImageUrl(set.Photo3) : '',
-                                                Photo4: set.Photo4 ? buildBookingSetImageUrl(set.Photo4) : '',
-                                                Photo5: set.Photo5 ? buildBookingSetImageUrl(set.Photo5) : '',
-                                                Photo6: set.Photo6 ? buildBookingSetImageUrl(set.Photo6) : '',
-                                                Photo7: set.Photo7 ? buildBookingSetImageUrl(set.Photo7) : '',
-                                                photo1: set.Photo1 ? buildBookingSetImageUrl(set.Photo1) : '',
-                                                photo2: set.Photo2 ? buildBookingSetImageUrl(set.Photo2) : '',
-                                                photo3: set.Photo3 ? buildBookingSetImageUrl(set.Photo3) : '',
-                                                photo4: set.Photo4 ? buildBookingSetImageUrl(set.Photo4) : '',
-                                                photo5: set.Photo5 ? buildBookingSetImageUrl(set.Photo5) : '',
-                                                photo6: set.Photo6 ? buildBookingSetImageUrl(set.Photo6) : '',
-                                                photo7: set.Photo7 ? buildBookingSetImageUrl(set.Photo7) : '',
-                                              };
+                                          <div className="rounded-lg border border-base-200 bg-base-50/60 p-3 space-y-3">
+                                            <div className="flex items-center justify-between">
+                                              <div>
+                                                <p className="text-[10px] uppercase font-mono tracking-wider text-base-content/50 font-black">Set Photo Preview</p>
+                                                <p className="font-mono text-xs font-bold text-base-content">{selectedSet.SetID}</p>
+                                              </div>
+                                              <button
+                                                type="button"
+                                                onClick={() => setSelectedSetTabs(prev => ({ ...prev, [booking.BookingID]: null }))}
+                                                className="text-[10px] font-mono font-bold text-base-content/60 hover:text-base-content"
+                                              >
+                                                Close
+                                              </button>
+                                            </div>
 
-                                              setDrawerTargetSet(formattedSetForDrawer);
-                                              setIsSetDrawerOpen(true);
-                                            }}
-                                            className="bg-info/10 hover:bg-info/20 text-info text-left px-2.5 py-1.5 rounded font-mono text-[11px] border border-info/20 font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
-                                          >
-                                            📦 {set.SetID}
-                                            <span className="text-[9px] opacity-70 font-medium">({activePhotosArray.length} 📷)</span>
-                                          </button>
+                                            {selectedPhotos.length > 0 ? (
+                                              <div className="grid grid-cols-2 gap-2">
+                                                {selectedPhotos.map((photo, idx) => (
+                                                  <a
+                                                    key={`${selectedSet.SetID}-${idx}`}
+                                                    href={photo}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    className="group relative aspect-[4/3] overflow-hidden rounded-lg border border-base-300 bg-base-100 shadow-xs"
+                                                  >
+                                                    <img
+                                                      src={photo}
+                                                      alt={`Booking set preview ${idx + 1}`}
+                                                      className="h-full w-full object-cover transition-transform group-hover:scale-105"
+                                                    />
+                                                  </a>
+                                                ))}
+                                              </div>
+                                            ) : (
+                                              <p className="text-[11px] italic opacity-40 font-mono">No photos attached to this set.</p>
+                                            )}
+                                          </div>
                                         );
-                                      })}
+                                      })()}
                                     </div>
                                   ) : (
                                     <p className="italic opacity-40 font-mono text-[11px]">Pending delivery scans or missing child references.</p>
@@ -390,6 +440,10 @@ export default function BookingsDashboardPage() {
                                   
                                   {/* Itemized consumption ledger */}
                                   <div className="md:col-span-7 space-y-2">
+                                    <div className="border-b border-base-200 pb-1.5">
+                                      <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-base-content/50">Active MRN</p>
+                                      <p className="text-sm font-black text-base-content">{activeMRNString}</p>
+                                    </div>
                                     <h5 className="text-[10px] font-mono font-bold text-base-content/60 uppercase">Consumed Implant & Instrument Matrix</h5>
                                     {activeUsageDetails.Items.length > 0 ? (
                                       <div className="border border-base-200 rounded-lg overflow-hidden max-h-[160px] overflow-y-auto">
