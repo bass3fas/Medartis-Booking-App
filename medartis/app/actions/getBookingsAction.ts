@@ -3,6 +3,7 @@
 
 import { google } from 'googleapis';
 import { Bookings } from '../types/interfaces';
+import { buildAppSheetImageUrl } from '../lib/appsheet-image-url';
 
 // Update type definition to support flexible fields required by SetDetailsDrawer
 export interface BookingSet {
@@ -47,7 +48,7 @@ export async function fetchBookingsLog(): Promise<{ success: boolean; data: Enha
     // Parse BookingSets sheet mapping precisely
     const bookingSetsParsed = bSetRows.map(row => {
       const obj: any = {};
-      bSetHeaders.forEach((h, i) => {
+      bSetHeaders.forEach((h: string, i: number) => {
         // Normalize whitespaces or headers safely
         const key = h ? h.toString().trim() : '';
         obj[key] = row[i] !== undefined ? row[i].toString().trim() : '';
@@ -58,20 +59,20 @@ export async function fetchBookingsLog(): Promise<{ success: boolean; data: Enha
     // Parse remaining support sets mapping
     const usageItemsParsed = usageRows.map(row => {
       const item: any = {};
-      usageHeaders.forEach((h, i) => { item[h] = row[i] !== undefined ? row[i].toString().trim() : ''; });
+      usageHeaders.forEach((h: string, i: number) => { item[h] = row[i] !== undefined ? row[i].toString().trim() : ''; });
       return item;
     });
 
     const photosParsed = photoRows.map(row => {
       const obj: any = {};
-      photoHeaders.forEach((h, i) => { obj[h] = row[i] !== undefined ? row[i].toString().trim() : ''; });
+      photoHeaders.forEach((h: string, i: number) => { obj[h] = row[i] !== undefined ? row[i].toString().trim() : ''; });
       return obj;
     });
 
     const bookingsList: EnhancedBooking[] = bookingRows
       .map((row) => {
         const item: any = {};
-        bookingHeaders.forEach((h, i) => {
+        bookingHeaders.forEach((h: string, i: number) => {
           item[h] = row[i] !== undefined ? row[i].toString().trim() : '';
         });
 
@@ -81,27 +82,28 @@ export async function fetchBookingsLog(): Promise<{ success: boolean; data: Enha
         const relatedBookingSets: BookingSet[] = bookingSetsParsed
           .filter(bs => bs.BookingID === bID)
           .map(bs => {
+            const photoFields = ['Photo1', 'Photo2', 'Photo3', 'Photo4', 'Photo5', 'Photo6', 'Photo7'] as const;
+            const photoValues = photoFields.reduce((acc, field, index) => {
+              const rawValue = bs[`photo${index + 1}`] || bs[field] || '';
+              const normalizedValue = buildAppSheetImageUrl(rawValue, 'BookingSets');
+              acc[field] = normalizedValue;
+              acc[field.toLowerCase()] = normalizedValue;
+              return acc;
+            }, {} as Record<string, string>);
+
             return {
+              ...bs,
               BookingID: bs.BookingID,
               SetID: bs.SetID || '',
               // Support fallback variations matching data schema naming conventions
               SetName: bs["Set Name"] || bs.SetName || bs.SetID || '',
               Status: bs.BookingStatus || bs["Photo Confirmation"] || 'Allocated',
-              
-              // 🌟 Crucial fix: Map the absolute lowercase columns from your spreadsheet fields
-              Photo1: bs.photo1 || '',
-              Photo2: bs.photo2 || '',
-              Photo3: bs.photo3 || '',
-              Photo4: bs.photo4 || '',
-              Photo5: bs.photo5 || '',
-              Photo6: bs.photo6 || '',
-              Photo7: bs.photo7 || '',
+              ...photoValues,
 
               // Compatibility properties so your existing SetDetailsDrawer gets a complete data shell mapping
               computedStatus: bs.BookingStatus || 'Booked',
               computedLocation: 'Dispatched to Case',
               computedComplete: 'Yes',
-              ...bs
             };
           });
 

@@ -2,10 +2,11 @@
 'use client';
 
 import { useState, useEffect, Fragment } from 'react';
-import { fetchBookingsLog, EnhancedBooking, PatientUsageDetails } from '../actions/getBookingsAction';
+import { fetchBookingsLog, EnhancedBooking } from '../actions/getBookingsAction';
 import { BookingSet } from '../types/interfaces';
 import SetDetailsDrawer from '../components/SetDetailsDrawer';
 import { VirtualSet } from '../actions/getSetsAction';
+import { buildAppSheetImageUrl } from '../lib/appsheet-image-url';
 
 export default function BookingsDashboardPage() {
   const [bookings, setBookings] = useState<EnhancedBooking[]>([]);
@@ -55,34 +56,8 @@ export default function BookingsDashboardPage() {
     return '';
   }
 
-  function buildSetImageUrl(fileName: string): string {
-    if (!fileName || fileName.trim() === '') return '';
-    if (fileName.startsWith('http')) return fileName;
-    return `https://www.appsheet.com/image/getimageurl?appName=MedartisPhase1-5435197&tableName=Sets&fileName=${encodeURIComponent(fileName.trim())}&width=1000`;
-  }
-
-  // Point asset builder query directly to the active BookingSets context bucket
   function buildBookingSetImageUrl(fileName: string): string {
-    if (!fileName || fileName.trim() === '') return '';
-    if (fileName.startsWith('http')) return fileName;
-    // Normalize incoming values: some rows include a path prefix (e.g. "BookingSets_Images/...")
-    const trimmed = fileName.trim();
-    let tableName = 'BookingSets';
-    let file = trimmed;
-
-    if (trimmed.includes('/')) {
-      const parts = trimmed.split('/').filter(Boolean);
-      const first = parts[0] || '';
-      // If the prefix looks like a BookingSets image folder, use it as the table name and strip from fileName
-      if (/bookingsets/i.test(first)) {
-        tableName = first; // preserves BookingSets_Images when present
-        file = parts.slice(1).join('/');
-      }
-    }
-
-    const encodedFile = encodeURIComponent(file);
-    const encodedTable = encodeURIComponent(tableName);
-    return `https://www.appsheet.com/image/getimageurl?appName=MedartisPhase1-5435197&tableName=${encodedTable}&fileName=${encodedFile}&width=1000`;
+    return buildAppSheetImageUrl(fileName, 'BookingSets');
   }
 
   const filteredBookings = bookings.filter(b => {
@@ -345,6 +320,13 @@ export default function BookingsDashboardPage() {
                                                 Photo5: set.Photo5 ? buildBookingSetImageUrl(set.Photo5) : '',
                                                 Photo6: set.Photo6 ? buildBookingSetImageUrl(set.Photo6) : '',
                                                 Photo7: set.Photo7 ? buildBookingSetImageUrl(set.Photo7) : '',
+                                                photo1: set.Photo1 ? buildBookingSetImageUrl(set.Photo1) : '',
+                                                photo2: set.Photo2 ? buildBookingSetImageUrl(set.Photo2) : '',
+                                                photo3: set.Photo3 ? buildBookingSetImageUrl(set.Photo3) : '',
+                                                photo4: set.Photo4 ? buildBookingSetImageUrl(set.Photo4) : '',
+                                                photo5: set.Photo5 ? buildBookingSetImageUrl(set.Photo5) : '',
+                                                photo6: set.Photo6 ? buildBookingSetImageUrl(set.Photo6) : '',
+                                                photo7: set.Photo7 ? buildBookingSetImageUrl(set.Photo7) : '',
                                               };
 
                                               setDrawerTargetSet(formattedSetForDrawer);
@@ -420,7 +402,7 @@ export default function BookingsDashboardPage() {
                                             </tr>
                                           </thead>
                                           <tbody className="divide-y divide-base-100 font-medium">
-                                            {activeUsageDetails.Items.map((itm, i) => (
+                                            {activeUsageDetails.Items.map((itm: { ItemCode: string; Description: string; Quantity: number }, i: number) => (
                                               <tr key={i} className="hover:bg-base-50/50">
                                                 <td className="p-1.5 font-mono text-primary font-bold">{itm.ItemCode}</td>
                                                 <td className="p-1.5 text-base-content/80 truncate max-w-[140px]">{itm.Description}</td>

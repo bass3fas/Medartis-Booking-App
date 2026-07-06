@@ -3,6 +3,7 @@
 
 import { useState, useEffect, Fragment } from 'react';
 import { VirtualSet, fetchTraysAndUsageForSet, EnrichedTray, VirtualUsage } from '../actions/getSetsAction';
+import { buildAppSheetImageUrl } from '../lib/appsheet-image-url';
 
 interface DrawerProps {
   set: VirtualSet | null;
@@ -36,15 +37,19 @@ export default function SetDetailsDrawer({ set, isOpen, onClose }: DrawerProps) 
   if (!isOpen || !set) return null;
 
   // Extract valid image attachments assigned to this set record dynamically
+  const photoSet = set as VirtualSet & Record<string, string | undefined>;
   const availablePhotos = [
-    set.photo1 || (set as any).Photo1,
-    set.photo2 || (set as any).Photo2,
-    set.photo3 || (set as any).Photo3,
-    set.photo4 || (set as any).Photo4,
-    set.photo5 || (set as any).Photo5,
-    set.photo6 || (set as any).Photo6,
-    set.photo7 || (set as any).Photo7,
-  ].filter(Boolean);
+    photoSet.photo1 || photoSet.Photo1,
+    photoSet.photo2 || photoSet.Photo2,
+    photoSet.photo3 || photoSet.Photo3,
+    photoSet.photo4 || photoSet.Photo4,
+    photoSet.photo5 || photoSet.Photo5,
+    photoSet.photo6 || photoSet.Photo6,
+    photoSet.photo7 || photoSet.Photo7,
+  ]
+    .filter(Boolean)
+    .map((photo) => buildAppSheetImageUrl(String(photo), 'BookingSets'))
+    .filter(Boolean);
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden font-sans">
@@ -182,7 +187,7 @@ export default function SetDetailsDrawer({ set, isOpen, onClose }: DrawerProps) 
                                 {tray.contents.map((item) => {
                                   const ideal = Number(item.IdealQty) || 0;
                                   const current = item.computedCurrentQty;
-                                  const actual = item.ActualQty !== undefined && item.ActualQty !== '' ? Number(item.ActualQty) : ideal;
+                                  const actual = item.ActualQty !== undefined && item.ActualQty !== '' ? Number(item.ActualQty ?? 0) : ideal;
                                   
                                   const isMissing = current < ideal;
                                   const isItemExpanded = expandedItemId === item.ItemID;
