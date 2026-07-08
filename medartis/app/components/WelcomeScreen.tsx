@@ -4,10 +4,36 @@
 import { useState, useEffect } from 'react';
 import { handleDatabaseAuth } from '../actions/auth';
 
+function getSessionState() {
+  if (typeof window === 'undefined') {
+    return { isAuthenticated: false, userRole: '' };
+  }
+
+  const sessionToken = localStorage.getItem('medartis_session_token');
+  if (!sessionToken) {
+    return { isAuthenticated: false, userRole: '' };
+  }
+
+  try {
+    const session = JSON.parse(sessionToken);
+    if (Date.now() < session.expiresAt) {
+      return {
+        isAuthenticated: Boolean(session.role && session.role !== 'operator'),
+        userRole: session.role || 'operator',
+      };
+    }
+
+    localStorage.removeItem('medartis_session_token');
+  } catch {
+    localStorage.removeItem('medartis_session_token');
+  }
+
+  return { isAuthenticated: false, userRole: '' };
+}
+
 export default function WelcomeScreen() {
-  const [isMounted, setIsMounted] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [userRole, setUserRole] = useState(''); // Tracks active database role status
+  const [sessionState, setSessionState] = useState(getSessionState);
+  const { isAuthenticated, userRole } = sessionState;
   
   const [isSignUp, setIsSignUp] = useState(false);
   const [name, setName] = useState('');
@@ -17,29 +43,10 @@ export default function WelcomeScreen() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    setIsMounted(true);
-    const sessionToken = localStorage.getItem('medartis_session_token');
-    if (sessionToken) {
-      try {
-        const session = JSON.parse(sessionToken);
-        if (Date.now() < session.expiresAt) {
-          setUserRole(session.role || 'operator');
-          // If they are approved (Admin, Warehouse, or Sales), we authenticate them out of this screen
-          if (session.role && session.role !== 'operator') {
-            setIsAuthenticated(true);
-          }
-        } else {
-          localStorage.removeItem('medartis_session_token');
-        }
-      } catch {
-        localStorage.removeItem('medartis_session_token');
-      }
-    }
-
     const handleSignOutEvent = () => {
-      setIsAuthenticated(false);
-      setUserRole('');
+      setSessionState({ isAuthenticated: false, userRole: '' });
     };
+
     window.addEventListener('app-signout', handleSignOutEvent);
     return () => window.removeEventListener('app-signout', handleSignOutEvent);
   }, []);
@@ -72,10 +79,10 @@ export default function WelcomeScreen() {
     // 📢 Broadcast that a user successfully logged in!
     window.dispatchEvent(new Event('app-signin')); 
 
-    setUserRole(result.user?.role || 'operator');
-    if (result.user?.role && result.user?.role !== 'operator') {
-      setIsAuthenticated(true);
-    }
+    setSessionState({
+      isAuthenticated: Boolean(result.user?.role && result.user?.role !== 'operator'),
+      userRole: result.user?.role || 'operator',
+    });
     setPassword('');
 
     } else {
@@ -86,17 +93,14 @@ export default function WelcomeScreen() {
 
   const handleForceLogOut = () => {
     localStorage.removeItem('medartis_session_token');
-    setUserRole('');
-    setIsAuthenticated(false);
+    setSessionState({ isAuthenticated: false, userRole: '' });
   };
-
-  if (!isMounted) return null;
 
   // 🛡️ If the user is authenticated AND they have a confirmed role, unlock the main app layout
   if (isAuthenticated && userRole !== 'operator') return null;
 
   return (
-    <div className="fixed inset-0 md:left-60 z-[100] bg-gradient-to-br from-primary to-secondary text-primary-content flex flex-col items-center justify-center p-6">
+    <div className="fixed inset-0 z-100 h-screen w-screen bg-linear-to-br from-primary to-secondary text-primary-content flex flex-col items-center justify-center p-6">
       <div className="card w-full max-w-md bg-base-100 text-base-content shadow-2xl p-8 border border-base-300">
         <div className="card-body p-0 items-center text-center">
           
