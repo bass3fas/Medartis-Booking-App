@@ -18,7 +18,7 @@ function SetsMatrixContent() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');       
   const [completeFilter, setCompleteFilter] = useState('all');   
-  const [loanFilter, setLoanFilter] = useState('all');           
+  const [loanFilter, setLoanFilter] = useState('all');            
   const [locationFilter, setLocationFilter] = useState('all');   
 
   useEffect(() => {
@@ -177,20 +177,7 @@ function SetsMatrixContent() {
         </div>
       ) : (
         <div className="flex flex-col gap-10">
-          {statusFilter !== 'Booked' && (
-            <div>
-              <div className="flex items-center gap-3 mb-4">
-                <h2 className="text-sm font-black tracking-wider uppercase opacity-60 font-mono">Available Core Lots ({freeSets.length})</h2>
-                <div className="h-px bg-base-300 flex-1" />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
-                {freeSets.map(s => (
-                  <SetInventoryCard key={s.SetID} set={s} onInspect={(id) => { setSelectedSet(s); setIsDrawerOpen(true); }} />
-                ))}
-              </div>
-            </div>
-          )}
-
+          {/* 1. Booked Lots rendered first now */}
           {statusFilter !== 'Free' && (
             <div>
               <div className="flex items-center gap-3 mb-4">
@@ -199,6 +186,21 @@ function SetsMatrixContent() {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
                 {bookedSets.map(s => (
+                  <SetInventoryCard key={s.SetID} set={s} onInspect={(id) => { setSelectedSet(s); setIsDrawerOpen(true); }} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 2. Free Lots rendered second */}
+          {statusFilter !== 'Booked' && (
+            <div>
+              <div className="flex items-center gap-3 mb-4">
+                <h2 className="text-sm font-black tracking-wider uppercase opacity-60 font-mono">Available Core Lots ({freeSets.length})</h2>
+                <div className="h-px bg-base-300 flex-1" />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
+                {freeSets.map(s => (
                   <SetInventoryCard key={s.SetID} set={s} onInspect={(id) => { setSelectedSet(s); setIsDrawerOpen(true); }} />
                 ))}
               </div>

@@ -18,10 +18,12 @@ export default function SetInventoryCard({ set, onInspect }: SetCardProps) {
   const activeLocation = set.computedLocation;
 
   return (
-    <div className={`card bg-base-100 shadow-sm transition-all hover:shadow-md rounded-xl overflow-hidden flex flex-col justify-between border-2 ${
-      isLongTerm 
-        ? 'border-purple-500/40 bg-gradient-to-b from-purple-50/10 to-transparent' 
-        : 'border-base-300'
+    <div className={`card shadow-sm transition-all hover:shadow-md rounded-xl overflow-hidden flex flex-col justify-between border-2 ${
+      isBooked 
+        ? 'bg-amber-50/30 dark:bg-amber-950/10 border-amber-500/30' // 🟡 Added distinct subtle amber background/border for booked sets
+        : isLongTerm 
+          ? 'bg-base-100 border-purple-500/40 bg-gradient-to-b from-purple-50/10 to-transparent' 
+          : 'bg-base-100 border-base-300'
     }`}>
       
       {/* Top Banner Segment */}
