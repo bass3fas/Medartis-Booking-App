@@ -13,6 +13,10 @@ export default function SetInventoryCard({ set, onInspect }: SetCardProps) {
   const isComplete = set.computedComplete === 'Yes';
   const isBooked = set.computedStatus === 'Booked';
 
+  // Fallback string values if missing in DB rows
+  const baselineLocation = set.Location || 'Central Warehouse';
+  const activeLocation = set.computedLocation;
+
   return (
     <div className={`card bg-base-100 shadow-sm transition-all hover:shadow-md rounded-xl overflow-hidden flex flex-col justify-between border-2 ${
       isLongTerm 
@@ -24,7 +28,6 @@ export default function SetInventoryCard({ set, onInspect }: SetCardProps) {
       <div className="p-5 border-b border-base-200">
         <div className="flex justify-between items-start gap-4">
           <div>
-            {/* Dynamic Loan Tag Styling */}
             <span className={`text-[9px] uppercase font-mono tracking-widest font-black px-2 py-0.5 rounded ${
               isLongTerm ? 'bg-purple-100 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300' : 'bg-base-200 text-base-content/70'
             }`}>
@@ -37,7 +40,6 @@ export default function SetInventoryCard({ set, onInspect }: SetCardProps) {
             <p className="text-[11px] font-mono opacity-40">ID: {set.SetID}</p>
           </div>
 
-          {/* Complete vs Incomplete Status indicators */}
           <span className={`badge badge-sm font-bold tracking-tight px-2.5 py-2 font-mono text-[10px] ${
             isComplete ? 'badge-success bg-success/10 text-success border-success/20' : 'badge-error bg-error/10 text-error border-error/20'
           }`}>
@@ -46,25 +48,38 @@ export default function SetInventoryCard({ set, onInspect }: SetCardProps) {
         </div>
       </div>
 
-      {/* Center Body Core */}
-      <div className="p-5 flex-1 flex flex-col gap-3 justify-center">
+      {/* Center Body Core — Displays Both Locations Stacked */}
+      <div className="p-5 flex-1 flex flex-col gap-4 justify-center">
+        
+        {/* Row 1: Home Warehouse Location */}
+        <div>
+          <span className="text-[10px] uppercase font-mono tracking-wider opacity-40 font-bold block">
+            Initial Location
+          </span>
+          <span className="text-xs font-semibold text-base-content/80 block mt-0.5 truncate">
+            🏢 {baselineLocation}
+          </span>
+        </div>
+
+        {/* Row 2: Live Relocated Pipeline State */}
         <div>
           <span className="text-[10px] uppercase font-mono tracking-wider opacity-40 font-bold block">
             Current Location
           </span>
-          <span className="text-sm font-black text-base-content block mt-0.5 truncate">
-            📍 {set.computedLocation}
+          <span className={`text-sm font-black block mt-0.5 truncate ${
+            isBooked ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'
+          }`}>
+            📍 {activeLocation}
           </span>
         </div>
 
         {set.Notes && (
-          <p className="text-xs opacity-50 italic line-clamp-1">"{set.Notes}"</p>
+          <p className="text-xs opacity-50 italic line-clamp-1 mt-1">"{set.Notes}"</p>
         )}
       </div>
 
       {/* Structural Operational Footer */}
       <div className="px-5 py-3.5 bg-base-200/40 border-t border-base-200 flex items-center justify-between text-[11px] font-medium">
-        {/* Availability Badge Overlay */}
         <span className={`font-mono px-2 py-0.5 rounded-md font-bold text-[10px] ${
           isBooked ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
         }`}>

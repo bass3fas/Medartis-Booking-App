@@ -76,60 +76,84 @@ export async function fetchEnrichedSets(): Promise<{ success: boolean; data: Vir
 
     // Loop through every single Set independently to build isolated tray scopes
     const data: VirtualSet[] = rawSets.map((set) => {
-      const setId = set.SetID;
+      const setId = (set.SetID || '').toString().trim();
+      const setName = (set.SetName || '').toString().trim();
 
       // Filter down only the specific trays tied to this set instance
-      const relatedSetTrays = rawTrays.filter(t => t.SetID === setId);
-
-      // Map those trays and calculate item metrics isolated to this set environment
+      const relatedSetTrays = rawTrays.filter(t => (t.SetID || '').toString().trim() === setId);
       let setHasIncompleteTray = false;
 
       if (relatedSetTrays.length > 0) {
         relatedSetTrays.forEach(tray => {
           const trayContents = rawContents.filter(c => c.TrayID === tray.TrayID);
-
           let totalCurrent = 0;
           let totalIdeal = 0;
 
           trayContents.forEach(item => {
             const ideal = Number(item.IdealQty) || 0;
             const baseQty = (item.ActualQty === undefined || item.ActualQty === '') ? ideal : Number(item.ActualQty) || 0;
-
-            // Strict item mapping logic: must match item identity and belong to this active set block
             const pendingUsageSum = processedUsages
               .filter(u => u.ItemID === item.ItemID && u.computedUsageStatus === 'Pending to Refill')
               .reduce((sum, u) => sum + (Number(u.QtyUsed) || 0), 0);
 
-            const computedCurrentQty = baseQty - pendingUsageSum;
-
-            totalCurrent += computedCurrentQty;
+            totalCurrent += (baseQty - pendingUsageSum);
             totalIdeal += ideal;
           });
 
-          // Evaluate this tray structure: if items don't balance out, flip the flag
           if (totalCurrent < totalIdeal) {
             setHasIncompleteTray = true;
           }
         });
       }
 
-      // 🚦 FINAL DETERMINISTIC COMPLETENESS STATUS ASSIGNMENT
       let computedComplete: 'Yes' | 'No' = 'Yes';
       if (relatedSetTrays.length > 0) {
         computedComplete = setHasIncompleteTray ? 'No' : 'Yes';
       } else {
-        // Safe fallback text if no trays exist
         computedComplete = (set.IsComplete && set.IsComplete.toLowerCase() === 'yes') ? 'Yes' : 'No';
       }
 
-      // Handle Location and Booking properties routing
-      const match = rawBookings.find(b => {
-        const requestedSets = b["Requested Sets"] || b["Selected Sets"] || "";
-        return requestedSets.includes(setId) && !["Returned", "Cancelled"].includes(b.Status);
+      // ========================================================
+      // 🎯 FIXED MASTER TWO-FIELD MATRIX ALLOCATION ENGINE 🎯
+      // ========================================================
+      const activeSetBookings = rawBookings.filter(b => {
+        // Skip bookings that are already completed/Returned or dropped/Cancelled
+        const bookingStatus = (b.Status || '').toString().trim();
+        const isLive = !["Returned", "Cancelled"].includes(bookingStatus);
+        if (!isLive) return false;
+
+        // 1. Check inside "Selected Sets" (Matches exact serial tags like "SET-CCS17-A04")
+        const rawSelected = b["Selected Sets"] || "";
+        const selectedList = rawSelected.toString().split(',').map(s => s.trim()).filter(Boolean);
+        const matchesSelectedID = selectedList.includes(setId);
+
+        // 2. Check inside "Requested Sets" (Matches generic catalog descriptor profiles like "CCS 1.7")
+        const rawRequested = b["Requested Sets"] || "";
+        const requestedList = rawRequested.toString().split(',').map(s => s.trim()).filter(Boolean);
+        const matchesGenericName = setName ? requestedList.includes(setName) : false;
+
+        // A match in either field means this active booking has claimed the row item
+        return matchesSelectedID || matchesGenericName;
       });
+
+      const computedStatus = activeSetBookings.length > 0 ? 'Booked' : 'Free';
       
-      const computedStatus = match ? 'Booked' : 'Free';
-      const computedLocation = match ? match.Hospital || 'In Transit' : (set.Location || 'Warehouse');
+      // Default to initial static registry location property from database
+      let computedLocation = set.Location || 'Warehouse';
+
+      // Re-route target coordinates based on latest non-returned surgical event record found
+      if (activeSetBookings.length > 0) {
+        const sortedActiveBookings = [...activeSetBookings].sort((a, b) => {
+          const dateCompare = (b.CaseDate || '').toString().localeCompare((a.CaseDate || '').toString());
+          if (dateCompare !== 0) return dateCompare;
+          return (b.CaseTime || '').toString().localeCompare((a.CaseTime || '').toString());
+        });
+
+        const latestActiveBooking = sortedActiveBookings[0];
+        if (latestActiveBooking && latestActiveBooking.Hospital) {
+          computedLocation = latestActiveBooking.Hospital;
+        }
+      }
 
       return {
         ...set,
@@ -145,7 +169,6 @@ export async function fetchEnrichedSets(): Promise<{ success: boolean; data: Vir
     return { success: false, data: [], error: err.message };
   }
 }
-
 // ==========================================
 // 2. DETAILED SLIDE-OVER DRAWER DATA LOADER
 // ==========================================

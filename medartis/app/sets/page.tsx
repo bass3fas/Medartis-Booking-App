@@ -1,13 +1,14 @@
 // app/sets/page.tsx
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import SetInventoryCard from '../components/SetInventoryCard';
 import SetDetailsDrawer from '../components/SetDetailsDrawer';
 import { fetchEnrichedSets, VirtualSet } from '../actions/getSetsAction'; // Ensure this matches your unified server file
 
-export default function SetsMatrixPage() {
+// 📦 Core logic wrapped safely inside a Suspense container boundary
+function SetsMatrixContent() {
   const searchParams = useSearchParams();
   const [sets, setSets] = useState<VirtualSet[]>([]);
   const [loading, setLoading] = useState(true);
@@ -215,5 +216,21 @@ export default function SetsMatrixPage() {
         }} 
       />
     </div>
+  );
+}
+
+// 🏷️ Exported main page default route with static suspense fallback
+export default function SetsMatrixPage() {
+  return (
+    <Suspense 
+      fallback={
+        <div className="flex flex-col items-center justify-center py-40 gap-2">
+          <span className="loading loading-ring loading-md text-primary"></span>
+          <span className="text-[10px] font-mono tracking-widest opacity-40 font-black uppercase">Loading Stream Channels...</span>
+        </div>
+      }
+    >
+      <SetsMatrixContent />
+    </Suspense>
   );
 }
