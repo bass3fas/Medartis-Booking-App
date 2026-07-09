@@ -4,6 +4,8 @@
 import { useState, useEffect, Fragment } from 'react';
 import Link from 'next/link';
 import { fetchBookingsLog, EnhancedBooking } from '../actions/getBookingsAction';
+import AddBookingModal from '../components/AddBookingModal';
+import BookingFullScreenView from '../components/BookingFullScreenView';
 import { BookingSet } from '../types/interfaces';
 import SetDetailsDrawer from '../components/SetDetailsDrawer';
 import { VirtualSet } from '../actions/getSetsAction';
@@ -25,6 +27,8 @@ export default function BookingsDashboardPage() {
 
   const [drawerTargetSet, setDrawerTargetSet] = useState<any | null>(null);
   const [isSetDrawerOpen, setIsSetDrawerOpen] = useState(false);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [fullScreenBooking, setFullScreenBooking] = useState<EnhancedBooking | null>(null);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [hospitalFilter, setHospitalFilter] = useState('all');
@@ -36,19 +40,23 @@ export default function BookingsDashboardPage() {
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
 
-  useEffect(() => {
-    async function initPage() {
-      setLoading(true);
-      const res = await fetchBookingsLog();
-      if (res.success) {
-        setBookings(res.data);
-      } else {
-        setErrorMessage(res.error || 'Failed to sync data matrices.');
-      }
-      setLoading(false);
+  const loadBookings = async () => {
+    setLoading(true);
+    const res = await fetchBookingsLog();
+    if (res.success) {
+      setBookings(res.data);
+      setErrorMessage('');
+    } else {
+      setErrorMessage(res.error || 'Failed to sync data matrices.');
     }
+    setLoading(false);
+  };
+
+  useEffect(() => {
     initPage();
   }, []);
+
+  const initPage = () => loadBookings();
 
   const uniqueHospitals = Array.from(new Set(bookings.map(b => b.Hospital).filter(Boolean))).sort();
   const uniqueSalesPeople = Array.from(new Set(bookings.map(b => b.Salesperson).filter(Boolean))).sort();
@@ -71,18 +79,6 @@ export default function BookingsDashboardPage() {
     if (isNaN(date.getTime())) return '';
     return date.toLocaleDateString('en-US', { weekday: 'long' });
   }
-
-  const handleClearFilters = () => {
-    setSearchQuery('');
-    setHospitalFilter('all');
-    setSalesPersonFilter('all');
-    setStatusFilter('all');
-    setTypeFilter('all');
-    setGapFilter('all');
-    setWeekdayFilter('all');
-    setFromDate('');
-    setToDate('');
-  };
 
   const filteredBookings = bookings.filter(b => {
     const mrn = b["Patient MRN"] || '';
@@ -189,9 +185,17 @@ export default function BookingsDashboardPage() {
 
   return (
     <div className="w-full p-2 font-sans">
-      <div className="mb-6 pb-2 border-b border-base-300">
-        <h1 className="text-xl font-black tracking-tight text-base-content">Surgical Bookings Registry</h1>
-        <p className="text-xs font-mono opacity-50 mt-0.5">Real-time workflows tracked directly from integrated logs</p>
+      <div className="flex justify-between items-center mb-6 pb-2 border-b border-base-300">
+        <div>
+          <h1 className="text-xl font-black tracking-tight text-base-content">Surgical Bookings Registry</h1>
+          <p className="text-xs font-mono opacity-50 mt-0.5">Real-time workflows tracked directly from integrated logs</p>
+        </div>
+        <button
+          onClick={() => setIsAddModalOpen(true)}
+          className="btn btn-primary btn-sm font-bold"
+        >
+          + Add Booking
+        </button>
       </div>
 
       {errorMessage && (
@@ -201,7 +205,7 @@ export default function BookingsDashboardPage() {
       )}
 
       {/* Filter Controls Panel */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-1 p-4 bg-base-100 border border-base-300 rounded-xl shadow-sm">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6 p-4 bg-base-100 border border-base-300 rounded-xl shadow-sm">
         <div className="flex flex-col gap-1">
           <label className="text-[10px] font-mono uppercase opacity-50 font-bold">Search Metadata</label>
           <input 
@@ -296,15 +300,6 @@ export default function BookingsDashboardPage() {
         </div>
       </div>
 
-      <div className="flex justify-end mb-4 px-2">
-        <button 
-          onClick={handleClearFilters}
-          className="btn btn-ghost btn-xs font-bold text-primary normal-case tracking-tight px-2 hover:bg-primary/5 rounded-md"
-        >
-          Clear All Filters
-        </button>
-      </div>
-
       <div className="mb-2 text-right">
         <span className="text-[10px] font-mono bg-base-200 text-base-content/70 px-2 py-1 rounded-md font-bold">
           Showing {sortedBookings.length} of {totalCount} total bookings
@@ -333,6 +328,7 @@ export default function BookingsDashboardPage() {
                 <th className="p-3">Clinical Surgeon</th>
                 <th className="p-3">Patient MRN(s)</th>
                 <th className="p-3">Sales Person</th>
+                <th className="p-3"></th>
                 <th className="p-3 text-center">Status</th>
               </tr>
             </thead>
@@ -351,11 +347,10 @@ export default function BookingsDashboardPage() {
 
                 return (
                   <Fragment key={booking.BookingID}>
-                    <tr 
-                      onClick={() => toggleRowExpansion(booking)}
+                    <tr
                       className={`hover:bg-base-50/60 transition-colors cursor-pointer ${isExpanded ? 'bg-base-50/80' : ''}`}
                     >
-                      <td className="p-3 text-center text-base-content/40 font-bold text-sm">{isExpanded ? '−' : '+'}</td>
+                      <td onClick={() => toggleRowExpansion(booking)} className="p-3 text-center text-base-content/40 font-bold text-sm">{isExpanded ? '−' : '+'}</td>
                       <td className="p-3 font-mono font-black text-primary select-all">
                         {booking.BookingID}
                         <span className="block text-[10px] font-bold text-base-content/40 normal-case tracking-normal">
@@ -389,6 +384,14 @@ export default function BookingsDashboardPage() {
                       </td>
                       <td className="p-3"><span className="font-semibold text-base-content/80">{booking.Salesperson || '—'}</span></td>
                       <td className="p-3 text-center">
+                        <button
+                          onClick={() => setFullScreenBooking(booking)}
+                          className="btn btn-xs btn-ghost"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 1v4m0 0h-4m4 0l-5-5" /></svg>
+                        </button>
+                      </td>
+                      <td className="p-3 text-center">
                         <span className={`badge badge-sm font-mono px-2.5 py-2 text-[10px] uppercase tracking-wider ${statusBadges[rawStatusKey] || 'bg-base-200 text-base-content'}`}>
                           {rawStatusKey === 'usage received' ? 'Used' : displayStatus || 'Pending'}
                         </span>
@@ -398,7 +401,7 @@ export default function BookingsDashboardPage() {
                     {/* Expandable Box Frame */}
                     {isExpanded && (
                       <tr className="bg-base-50/20">
-                        <td colSpan={9} className="p-4 border-l-2 border-primary bg-base-100/60">
+                        <td colSpan={10} className="p-4 border-l-2 border-primary bg-base-100/60">
                           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
                             
                             {/* Left Section: Set Requirements & Special Requests Container */}
@@ -766,6 +769,16 @@ export default function BookingsDashboardPage() {
           </div>
         </div>
       )}
+
+      <AddBookingModal
+        isOpen={isAddModalOpen}
+        onClose={() => setIsAddModalOpen(false)}
+        onSuccess={initPage}
+        salesPeople={uniqueSalesPeople}
+        hospitals={uniqueHospitals}
+      />
+
+      <BookingFullScreenView booking={fullScreenBooking} onClose={() => setFullScreenBooking(null)} />
 
       <SetDetailsDrawer set={drawerTargetSet as VirtualSet | null} isOpen={isSetDrawerOpen} onClose={() => setIsSetDrawerOpen(false)} />
     </div>

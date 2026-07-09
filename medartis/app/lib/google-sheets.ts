@@ -8,8 +8,8 @@ const auth = new google.auth.JWT({
   scopes: ['https://www.googleapis.com/auth/spreadsheets']
 });
 
-const sheets = google.sheets({ version: 'v4', auth });
-const SPREADSHEET_ID = process.env.GOOGLE_SPREADSHEET_ID;
+export const sheets = google.sheets({ version: 'v4', auth });
+export const SPREADSHEET_ID = process.env.GOOGLE_SPREADSHEET_ID;
 
 // Reusable low-level matrix reader
 async function getSheetRows(tabName: string): Promise<any[][]> {
