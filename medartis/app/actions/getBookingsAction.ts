@@ -126,10 +126,10 @@ export async function fetchBookingsLog(): Promise<{ success: boolean; data: Enha
 
         // Parse standard legacy patient usage metrics safely
         const associatedUsages = usageItemsParsed.filter(u => normalizeBookingId(u.BookingID || u["BookingID"] || u.bookingid) === bID);
-        const directBookingMRNs = [
-          getBookingFieldValue(item, ['Patient MRN', 'PatientMRN', 'patient MRN', 'patientmrn']),
-        ]
-          .map(normalizeText)
+        const directBookingMRNsValue = getBookingFieldValue(item, ['Patient MRN', 'PatientMRN', 'patient MRN', 'patientmrn']);
+        const directBookingMRNs = directBookingMRNsValue
+          .split(',')
+          .map(mrn => mrn.trim())
           .filter(Boolean);
         const usageMRNs = associatedUsages
           .map(u => getBookingFieldValue(u, ['PatientMRN', 'MRN', 'Patient MRN', 'patientmrn', 'PatientMRN']))
