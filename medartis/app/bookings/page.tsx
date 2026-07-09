@@ -31,6 +31,10 @@ export default function BookingsDashboardPage() {
   const [salesPersonFilter, setSalesPersonFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
+  const [gapFilter, setGapFilter] = useState('all');
+  const [weekdayFilter, setWeekdayFilter] = useState('all');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
 
   useEffect(() => {
     async function initPage() {
@@ -62,6 +66,12 @@ export default function BookingsDashboardPage() {
     return buildAppSheetImageUrl(fileName, 'BookingSets');
   }
 
+  function getWeekdayString(b: EnhancedBooking): string {
+    const date = new Date(b.CaseDate);
+    if (isNaN(date.getTime())) return '';
+    return date.toLocaleDateString('en-US', { weekday: 'long' });
+  }
+
   const filteredBookings = bookings.filter(b => {
     const mrn = b["Patient MRN"] || '';
     const matchesSearch = 
@@ -81,7 +91,41 @@ export default function BookingsDashboardPage() {
       (typeFilter === 'empty' && formattedType === '') || 
       (typeFilter !== 'empty' && formattedType.toLowerCase() === typeFilter.toLowerCase());
 
-    return matchesSearch && matchesHospital && matchesSales && matchesStatus && matchesType;
+    const hasUsages = b.PatientUsages && b.PatientUsages.length > 0;
+    const hasPhotos = b.PatientUsages && b.PatientUsages.some(u => u.UsageLogSheet);
+    
+    let matchesGap = true;
+    if (gapFilter === 'no_mrn') matchesGap = !hasUsages;
+    if (gapFilter === 'no_usage') matchesGap = !hasUsages;
+    if (gapFilter === 'no_photo') matchesGap = hasUsages && !hasPhotos;
+
+    // Date Range Evaluation
+    let matchesDateRange = true;
+    if (b.CaseDate) {
+      const caseTime = new Date(b.CaseDate).getTime();
+      if (fromDate) {
+        const fromTime = new Date(fromDate).getTime();
+        if (caseTime < fromTime) matchesDateRange = false;
+      }
+      if (toDate) {
+        const toTime = new Date(toDate).getTime();
+        if (caseTime > toTime) matchesDateRange = false;
+      }
+    } else if (fromDate || toDate) {
+      matchesDateRange = false;
+    }
+    
+    const bWeekday = getWeekdayString(b);
+    const matchesWeekday = weekdayFilter === 'all' || (bWeekday && bWeekday === weekdayFilter);
+
+    return matchesSearch 
+      && matchesHospital 
+      && matchesSales 
+      && matchesStatus 
+      && matchesType 
+      && matchesGap
+      && matchesDateRange
+      && matchesWeekday;
   });
 
   function toTimestamp(b: any): number {
@@ -95,6 +139,7 @@ export default function BookingsDashboardPage() {
     return 0;
   }
 
+  const totalCount = bookings.length;
   const sortedBookings = [...filteredBookings].sort((a, b) => {
     return toTimestamp(b) - toTimestamp(a);
   });
@@ -144,7 +189,7 @@ export default function BookingsDashboardPage() {
       )}
 
       {/* Filter Controls Panel */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-6 p-4 bg-base-100 border border-base-300 rounded-xl shadow-sm">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 p-4 bg-base-100 border border-base-300 rounded-xl shadow-sm">
         <div className="flex flex-col gap-1">
           <label className="text-[10px] font-mono uppercase opacity-50 font-bold">Search Metadata</label>
           <input 
@@ -195,6 +240,56 @@ export default function BookingsDashboardPage() {
             {uniqueSalesPeople.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
+
+        <div className="flex flex-col gap-1">
+          <label className="text-[10px] font-mono uppercase opacity-50 font-bold">Data Gaps</label>
+          <select value={gapFilter} onChange={(e) => setGapFilter(e.target.value)} className="select select-sm select-bordered font-semibold text-xs bg-base-50 w-full">
+            <option value="all">All Records</option>
+            <option value="no_mrn">No MRN</option>
+            <option value="no_usage">No Usages</option>
+            
+          </select>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label className="text-[10px] font-mono uppercase opacity-50 font-bold">Day of Week</label>
+          <select value={weekdayFilter} onChange={(e) => setWeekdayFilter(e.target.value)} className="select select-sm select-bordered font-semibold text-xs bg-base-50 w-full">
+            <option value="all">Any Day</option>
+            <option value="Monday">Monday</option>
+            <option value="Tuesday">Tuesday</option>
+            <option value="Wednesday">Wednesday</option>
+            <option value="Thursday">Thursday</option>
+            <option value="Friday">Friday</option>
+            <option value="Saturday">Saturday</option>
+            <option value="Sunday">Sunday</option>
+          </select>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label className="text-[10px] font-mono uppercase opacity-50 font-bold">Date From</label>
+          <input 
+            type="date" 
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
+            className="input input-sm input-bordered font-semibold text-xs bg-base-50 focus:outline-none w-full"
+          />
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label className="text-[10px] font-mono uppercase opacity-50 font-bold">Date To</label>
+          <input 
+            type="date" 
+            value={toDate}
+            onChange={(e) => setToDate(e.target.value)}
+            className="input input-sm input-bordered font-semibold text-xs bg-base-50 focus:outline-none w-full"
+          />
+        </div>
+      </div>
+
+      <div className="mb-2 text-right">
+        <span className="text-[10px] font-mono bg-base-200 text-base-content/70 px-2 py-1 rounded-md font-bold">
+          Showing {sortedBookings.length} of {totalCount} total bookings
+        </span>
       </div>
 
       {loading ? (
@@ -212,7 +307,7 @@ export default function BookingsDashboardPage() {
             <thead className="bg-base-50 border-b border-base-200 font-mono text-[10px] uppercase font-black text-base-content/60">
               <tr>
                 <th className="p-3 w-8"></th>
-                <th className="p-3">Booking ID</th>
+                <th className="p-3">Booking ID / Day</th>
                 <th className="p-3">Case Date</th>
                 <th className="p-3">Type</th>
                 <th className="p-3">Hospital Destination</th>
@@ -242,9 +337,14 @@ export default function BookingsDashboardPage() {
                       className={`hover:bg-base-50/60 transition-colors cursor-pointer ${isExpanded ? 'bg-base-50/80' : ''}`}
                     >
                       <td className="p-3 text-center text-base-content/40 font-bold text-sm">
-                        {isExpanded ? '−' : '+'}
+                        <span className={`transition-transform duration-200 inline-block ${isExpanded ? 'rotate-90' : ''}`}>▶</span>
                       </td>
-                      <td className="p-3 font-mono font-black text-primary select-all">{booking.BookingID}</td>
+                      <td className="p-3 font-mono font-black text-primary select-all">
+                        {booking.BookingID}
+                        <span className="block text-[10px] font-bold text-base-content/40 normal-case tracking-normal">
+                          ({getWeekdayString(booking) || 'N/A'})
+                        </span>
+                      </td>
                       <td className="p-3 font-mono text-[11px] font-bold text-base-content/70">{booking.CaseDate || '—'}</td>
                       <td className="p-3">
                         {currentType ? (
