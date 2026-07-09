@@ -40,6 +40,27 @@ export default function BookingsDashboardPage() {
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
 
+  const getStoredSession = () => {
+    if (typeof window === 'undefined') {
+      return { name: 'Guest', role: '' };
+    }
+
+    const sessionToken = localStorage.getItem('medartis_session_token');
+    if (!sessionToken) {
+      return { name: 'Guest', role: '' };
+    }
+
+    try {
+      const session = JSON.parse(sessionToken);
+      return { name: session.name || 'Guest', role: session.role || '' };
+    } catch {
+      return { name: 'Guest', role: '' };
+    }
+  };
+
+  const [currentUserName, setCurrentUserName] = useState(getStoredSession().name);
+  const [currentUserRole, setCurrentUserRole] = useState(getStoredSession().role);
+
   const loadBookings = async () => {
     setLoading(true);
     const res = await fetchBookingsLog();
@@ -52,11 +73,11 @@ export default function BookingsDashboardPage() {
     setLoading(false);
   };
 
+  const initPage = () => loadBookings();
+
   useEffect(() => {
     initPage();
   }, []);
-
-  const initPage = () => loadBookings();
 
   const uniqueHospitals = Array.from(new Set(bookings.map(b => b.Hospital).filter(Boolean))).sort();
   const uniqueSalesPeople = Array.from(new Set(bookings.map(b => b.Salesperson).filter(Boolean))).sort();
@@ -774,6 +795,8 @@ export default function BookingsDashboardPage() {
         isOpen={isAddModalOpen}
         onClose={() => setIsAddModalOpen(false)}
         onSuccess={initPage}
+        currentUserName={currentUserName}
+        currentUserRole={currentUserRole}
         salesPeople={uniqueSalesPeople}
         hospitals={uniqueHospitals}
       />
