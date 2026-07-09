@@ -3,31 +3,26 @@
 
 import { sheets, SPREADSHEET_ID } from '../lib/google-sheets';
 import { z } from 'zod';
-import crypto from 'crypto'; // Import crypto for more robust random string generation
+import crypto from 'crypto';
 
+// 1. Precise Validation Schema matching your field structures
 const AddBookingSchema = z.object({
   Salesperson: z.string().min(1, 'Salesperson is required'),
   Hospital: z.string().min(1, 'Hospital is required'),
   Doctor: z.string().min(1, 'Doctor is required'),
   CaseDate: z.string().min(1, 'Case Date is required'),
-  CaseTime: z.string().optional(),
-  DeliverBeforeDate: z.string().optional(),
-  DeliverBeforeTime: z.string().optional(),
-  Type: z.string().optional(),
-  SpecialRequest: z.string().optional(),
-  RequestedSets: z.string().optional(),
+  CaseTime: z.string().optional().default('08:00'),
+  DeliverBeforeDate: z.string().optional().default(''),
+  DeliverBeforeTime: z.string().optional().default(''),
+  Type: z.string().optional().default('Standard'),
+  SpecialRequest: z.string().optional().default(''),
+  RequestedSets: z.string().optional().default(''),
 });
 
-// Helper function to generate a short, random alphanumeric string
-// Note: While this aims for randomness, a 4-character string has a limited keyspace (62^4 = ~14.7 million combinations).
-// For absolute uniqueness in a high-volume or distributed system, a full UUID (e.g., from 'uuid' library)
-// or a database-managed unique ID is generally used.
-// For this specific 'B-XXXX' format, we'll generate a random 4-character alphanumeric string.
+// Helper function to generate a short, random alphanumeric string for Booking ID (e.g., B-a1B2)
 function generateShortUniqueId(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   let result = '';
-  // Generate enough random bytes to pick 4 characters from `chars`
-  // For a 4-char ID, 4 bytes are sufficient.
   const randomBytes = crypto.randomBytes(4); 
   for (let i = 0; i < 4; i++) {
     result += chars[randomBytes[i] % chars.length]; 
@@ -36,70 +31,82 @@ function generateShortUniqueId(): string {
 }
 
 export async function addBookingAction(formData: FormData) {
+  // Convert standard FormData entries safely into an object for Zod validation
   const rawData = Object.fromEntries(formData.entries());
   const validation = AddBookingSchema.safeParse(rawData);
 
   if (!validation.success) {
-    return { success: false, error: validation.error.errors.map(e => e.message).join(', ') };
+    console.error('❌ Schema Validation Failed:', validation.error.errors);
+    return { 
+      success: false, 
+      error: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ') 
+    };
   }
 
-  const { Salesperson, Hospital, Doctor, CaseDate, CaseTime, DeliverBeforeDate, DeliverBeforeTime, Type, SpecialRequest, RequestedSets } = validation.data;
+  const data = validation.data;
 
   try {
     if (!SPREADSHEET_ID) {
-      throw new Error('GOOGLE_SPREADSHEET_ID environment variable is not set.');
+      throw new Error('GOOGLE_SPREADSHEET_ID environment variable is missing or undefined.');
     }
 
-    const spreadsheetId = SPREADSHEET_ID;
-    const range = 'Bookings';
-
-    // --- FIX: Generate random and unique BookingID ---
-    // The user requested 'B-XXXX' where XXXX are random numbers and/or letters and not repeated.
-    // For true non-repetition (uniqueness) in a distributed system, a UUID is generally used.
-    // A 4-character random alphanumeric string has a limited keyspace (62^4 = ~14.7 million combinations).
-    // While collisions are unlikely for small datasets, they are possible.
-    // For a more robust unique ID, consider using a library like 'uuid' and a longer ID,
-    // or implementing a check against existing IDs in the sheet (which can be slow for large sheets).
+    // Generate our unique booking format identity
     const newBookingID = `B-${generateShortUniqueId()}`;
 
-    const deliverBefore = DeliverBeforeDate && DeliverBeforeTime ? `${DeliverBeforeDate} ${DeliverBeforeTime}` : DeliverBeforeDate || '';
+    // Combine date and time structures for the "Deliver Before" column matrix safely
+    const deliverBefore = data.DeliverBeforeDate && data.DeliverBeforeTime 
+      ? `${data.DeliverBeforeDate} ${data.DeliverBeforeTime}` 
+      : data.DeliverBeforeDate || '';
 
-    // --- Column order based on sample data provided in the prompt ---
-    // BookingID Salesperson Hospital Doctor CaseDate CaseTime Deliver Before Special Request Status Requested Sets Selected Sets Last Updated Driver UsagePhoto UsagePhoto2 Patient MRN Delivery Note Delivery Note Link Type
-    // 0         1           2        3      4        5        6              7               8      9              10            11           12     13          14          15           16          17                 18
+    // 2. Build row alignment following your target Google Sheet header structure exactly:
+    // BookingID | Salesperson | Hospital | Doctor | CaseDate | CaseTime | Deliver Before | Special Request | Status | Requested Sets | ...
     const newRow = [
-      newBookingID, // 0
-      Salesperson,  // 1
-      Hospital,     // 2
-      Doctor,       // 3
-      CaseDate,     // 4
-      CaseTime,     // 5
-      deliverBefore, // 6 ("Deliver Before" column)
-      SpecialRequest, // 7
-      'Pending',    // 8 (Status - default to Pending on creation)
-      RequestedSets, // 9 ("Requested Sets" column)
-      '',           // 10 ("Selected Sets" - empty on creation)
-      new Date().toISOString(), // 11 ("Last Updated" - current timestamp)
-      '',           // 12 (Driver - empty on creation)
-      '',           // 13 (UsagePhoto - empty on creation)
-      '',           // 14 (UsagePhoto2 - empty on creation)
-      '',           // 15 (Patient MRN - typically assigned later via usages)
-      '',           // 16 (Delivery Note - empty on creation)
-      '',           // 17 (Delivery Note Link - empty on creation)
-      Type          // 18
+      newBookingID,             // 0: BookingID
+      data.Salesperson,         // 1: Salesperson
+      data.Hospital,            // 2: Hospital
+      data.Doctor,              // 3: Doctor
+      data.CaseDate,            // 4: CaseDate
+      data.CaseTime,            // 5: CaseTime
+      deliverBefore,            // 6: Deliver Before
+      data.SpecialRequest,      // 7: Special Request
+      'Pending',                // 8: Status (Defaults on entry creation)
+      data.RequestedSets,       // 9: Requested Sets
+      '',                       // 10: Selected Sets (Blank initially)
+      new Date().toISOString(), // 11: Last Updated (Timestamp snapshot)
+      '',                       // 12: Driver
+      '',                       // 13: UsagePhoto
+      '',                       // 14: UsagePhoto2
+      '',                       // 15: Patient MRN
+      '',                       // 16: Delivery Note
+      '',                       // 17: Delivery Note Link
+      data.Type                 // 18: Type
     ];
 
-    await sheets.spreadsheets.values.append({
-      spreadsheetId,
-      range,
+    console.log(`🚀 Attempting to append row to tab [Bookings] for ID: ${newBookingID}...`);
+
+    // 3. CRUCIAL: The actual write instruction to push the array directly to Google Sheets API
+    const response = await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: 'Bookings!A1:S', // Targets the explicit 'Bookings' tab range matrix
       valueInputOption: 'USER_ENTERED',
-      requestBody: { values: [newRow] },
+      requestBody: { 
+        values: [newRow] 
+      },
     });
 
-    return { success: true, message: `Booking ${newBookingID} created successfully.` };
-  } catch (error) {
-    console.error('Error adding booking:', error); // Log the full error for debugging
-    // Provide a more informative error message to the user
-    return { success: false, error: (error as Error).message || 'An unexpected error occurred while creating the booking.' };
+    console.log('✅ Google Sheets Write Successful:', response.statusText);
+
+    return { 
+      success: true, 
+      message: `Booking ${newBookingID} created successfully.` 
+    };
+
+  } catch (error: any) {
+    // Catch any network, credential permission, or API block errors here cleanly
+    console.error('🔴 GOOGLE SHEETS API ERROR:', error);
+    return { 
+      success: false, 
+      error: error.message || 'An unexpected database error occurred while creating the booking.' 
+    };
   }
 }

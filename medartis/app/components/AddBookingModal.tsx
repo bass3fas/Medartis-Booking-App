@@ -49,31 +49,41 @@ export default function AddBookingModal({
   const isAdmin = (currentUserRole || '').trim().toLowerCase() === 'admin';
   const salespersonValue = currentUserName?.trim() || '';
 
-  const handleSubmit = (formData: FormData) => {
+  // 1. Change the argument to accept a standard form event
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault(); // 🌟 Crucial: This stops the browser from doing that GET request/URL refresh!
     setError(null);
 
+    // 🌟 Explicitly construct the FormData from the form element
+    const formData = new FormData(e.currentTarget);
+
+    // Now formData is guaranteed to be a real FormData instance, so .getAll will work perfectly!
     const requestedSets = Array.from(formData.getAll('RequestedSets'));
     formData.delete('RequestedSets');
     formData.append('RequestedSets', requestedSets.join(', '));
 
     startTransition(async () => {
+      console.log('Sending data to server...');
       const result = await addBookingAction(formData);
+      
+      console.log('Server Action Result:', result);
+
       if (result.success) {
         onSuccess();
         onClose();
         formRef.current?.reset();
       } else {
+        console.error('Action Failed Error:', result.error);
         setError(result.error || 'An unknown error occurred.');
       }
     });
   };
-
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
       <div className="w-full max-w-3xl overflow-hidden rounded-[30px] border border-base-300 bg-base-100 shadow-2xl">
-        <form ref={formRef} action={handleSubmit}>
+        <form ref={formRef} onSubmit={handleSubmit}>
           <div className="border-b border-base-200 bg-gradient-to-r from-base-100 to-base-200/70 px-6 py-5">
             <div className="flex items-start justify-between gap-4">
               <div>
