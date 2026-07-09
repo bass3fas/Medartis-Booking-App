@@ -72,6 +72,18 @@ export default function BookingsDashboardPage() {
     return date.toLocaleDateString('en-US', { weekday: 'long' });
   }
 
+  const handleClearFilters = () => {
+    setSearchQuery('');
+    setHospitalFilter('all');
+    setSalesPersonFilter('all');
+    setStatusFilter('all');
+    setTypeFilter('all');
+    setGapFilter('all');
+    setWeekdayFilter('all');
+    setFromDate('');
+    setToDate('');
+  };
+
   const filteredBookings = bookings.filter(b => {
     const mrn = b["Patient MRN"] || '';
     const matchesSearch = 
@@ -189,7 +201,7 @@ export default function BookingsDashboardPage() {
       )}
 
       {/* Filter Controls Panel */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6 p-4 bg-base-100 border border-base-300 rounded-xl shadow-sm">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-1 p-4 bg-base-100 border border-base-300 rounded-xl shadow-sm">
         <div className="flex flex-col gap-1">
           <label className="text-[10px] font-mono uppercase opacity-50 font-bold">Search Metadata</label>
           <input 
@@ -282,6 +294,15 @@ export default function BookingsDashboardPage() {
             />
           </div>
         </div>
+      </div>
+
+      <div className="flex justify-end mb-4 px-2">
+        <button 
+          onClick={handleClearFilters}
+          className="btn btn-ghost btn-xs font-bold text-primary normal-case tracking-tight px-2 hover:bg-primary/5 rounded-md"
+        >
+          Clear All Filters
+        </button>
       </div>
 
       <div className="mb-2 text-right">
