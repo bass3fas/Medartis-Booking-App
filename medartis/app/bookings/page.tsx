@@ -97,7 +97,7 @@ export default function BookingsDashboardPage() {
     let matchesGap = true;
     if (gapFilter === 'no_mrn') matchesGap = !hasUsages;
     if (gapFilter === 'no_usage') matchesGap = !hasUsages;
-    if (gapFilter === 'no_photo') matchesGap = hasUsages && !hasPhotos;
+    if (gapFilter === 'no_usage_photo') matchesGap = hasUsages && !hasPhotos;
 
     // Date Range Evaluation
     let matchesDateRange = true;
@@ -189,7 +189,7 @@ export default function BookingsDashboardPage() {
       )}
 
       {/* Filter Controls Panel */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 p-4 bg-base-100 border border-base-300 rounded-xl shadow-sm">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6 p-4 bg-base-100 border border-base-300 rounded-xl shadow-sm">
         <div className="flex flex-col gap-1">
           <label className="text-[10px] font-mono uppercase opacity-50 font-bold">Search Metadata</label>
           <input 
@@ -246,7 +246,7 @@ export default function BookingsDashboardPage() {
           <select value={gapFilter} onChange={(e) => setGapFilter(e.target.value)} className="select select-sm select-bordered font-semibold text-xs bg-base-50 w-full">
             <option value="all">All Records</option>
             <option value="no_mrn">No MRN</option>
-            <option value="no_usage">No Usages</option>
+            <option value="no_usage">No Usage Items</option>
             
           </select>
         </div>
@@ -265,24 +265,22 @@ export default function BookingsDashboardPage() {
           </select>
         </div>
 
-        <div className="flex flex-col gap-1">
-          <label className="text-[10px] font-mono uppercase opacity-50 font-bold">Date From</label>
-          <input 
-            type="date" 
-            value={fromDate}
-            onChange={(e) => setFromDate(e.target.value)}
-            className="input input-sm input-bordered font-semibold text-xs bg-base-50 focus:outline-none w-full"
-          />
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <label className="text-[10px] font-mono uppercase opacity-50 font-bold">Date To</label>
-          <input 
-            type="date" 
-            value={toDate}
-            onChange={(e) => setToDate(e.target.value)}
-            className="input input-sm input-bordered font-semibold text-xs bg-base-50 focus:outline-none w-full"
-          />
+        <div className="flex flex-col gap-1 lg:col-span-2">
+          <label className="text-[10px] font-mono uppercase opacity-50 font-bold">Date Range (From → To)</label>
+          <div className="grid grid-cols-2 gap-2">
+            <input 
+              type="date" 
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="input input-sm input-bordered font-semibold text-xs bg-base-50 focus:outline-none w-full"
+            />
+            <input 
+              type="date" 
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              className="input input-sm input-bordered font-semibold text-xs bg-base-50 focus:outline-none w-full"
+            />
+          </div>
         </div>
       </div>
 
@@ -336,9 +334,7 @@ export default function BookingsDashboardPage() {
                       onClick={() => toggleRowExpansion(booking)}
                       className={`hover:bg-base-50/60 transition-colors cursor-pointer ${isExpanded ? 'bg-base-50/80' : ''}`}
                     >
-                      <td className="p-3 text-center text-base-content/40 font-bold text-sm">
-                        <span className={`transition-transform duration-200 inline-block ${isExpanded ? 'rotate-90' : ''}`}>▶</span>
-                      </td>
+                      <td className="p-3 text-center text-base-content/40 font-bold text-sm">{isExpanded ? '−' : '+'}</td>
                       <td className="p-3 font-mono font-black text-primary select-all">
                         {booking.BookingID}
                         <span className="block text-[10px] font-bold text-base-content/40 normal-case tracking-normal">
