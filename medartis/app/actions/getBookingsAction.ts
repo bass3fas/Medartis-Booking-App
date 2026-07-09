@@ -27,6 +27,23 @@ export type EnhancedBooking = Bookings & {
   RelatedBookingSets: BookingSet[]; // Column 20: REF_ROWS("BookingSets", "BookingID")
 };
 
+function normalizeText(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  return String(value).toString().trim();
+}
+
+function normalizeBookingId(value: unknown): string {
+  return normalizeText(value).trim().toUpperCase();
+}
+
+function getBookingFieldValue(row: Record<string, string>, keys: string[]): string {
+  for (const key of keys) {
+    const value = normalizeText(row[key]);
+    if (value) return value;
+  }
+  return '';
+}
+
 export async function fetchBookingsLog(): Promise<{ success: boolean; data: EnhancedBooking[]; error?: string }> {
   try {
     const [rawBookings, rawUsages, rawPhotos, rawParts, rawBookingSets] = await Promise.all([
@@ -76,11 +93,11 @@ export async function fetchBookingsLog(): Promise<{ success: boolean; data: Enha
           item[h] = row[i] !== undefined ? row[i].toString().trim() : '';
         });
 
-        const bID = item.BookingID || '';
+        const bID = normalizeBookingId(item.BookingID || item["BookingID"] || item.bookingid || '');
 
         // 🌟 Exact simulation of AppSheet REF_ROWS("BookingSets", "BookingID")
         const relatedBookingSets: BookingSet[] = bookingSetsParsed
-          .filter(bs => bs.BookingID === bID)
+          .filter(bs => normalizeBookingId(bs.BookingID) === bID)
           .map(bs => {
             const photoFields = ['Photo1', 'Photo2', 'Photo3', 'Photo4', 'Photo5', 'Photo6', 'Photo7'] as const;
             const photoValues = photoFields.reduce((acc, field, index) => {
@@ -108,12 +125,21 @@ export async function fetchBookingsLog(): Promise<{ success: boolean; data: Enha
           });
 
         // Parse standard legacy patient usage metrics safely
-        const associatedUsages = usageItemsParsed.filter(u => u.BookingID === bID);
-        const uniqueMRNsInUsage = Array.from(new Set(associatedUsages.map(u => u.PatientMRN || u.MRN).filter(Boolean))) as string[];
+        const associatedUsages = usageItemsParsed.filter(u => normalizeBookingId(u.BookingID || u["BookingID"] || u.bookingid) === bID);
+        const directBookingMRNs = [
+          getBookingFieldValue(item, ['Patient MRN', 'PatientMRN', 'patient MRN', 'patientmrn']),
+        ]
+          .map(normalizeText)
+          .filter(Boolean);
+        const usageMRNs = associatedUsages
+          .map(u => getBookingFieldValue(u, ['PatientMRN', 'MRN', 'Patient MRN', 'patientmrn', 'PatientMRN']))
+          .map(normalizeText)
+          .filter(Boolean);
+        const uniqueMRNsInUsage = Array.from(new Set([...directBookingMRNs, ...usageMRNs])) as string[];
 
-        const patientUsages = uniqueMRNsInUsage.map(mrn => {
-          const mrnSpecificRows = associatedUsages.filter(u => (u.PatientMRN || u.MRN) === mrn);
-          const photoMatch = photosParsed.find(p => p.BookingID === bID && (p.MRN === mrn || p.PatientMRN === mrn));
+        const patientUsages = uniqueMRNsInUsage.map((mrn) => {
+          const mrnSpecificRows = associatedUsages.filter(u => getBookingFieldValue(u, ['PatientMRN', 'MRN', 'Patient MRN', 'patientmrn', 'PatientMRN']) === mrn);
+          const photoMatch = photosParsed.find(p => normalizeBookingId(p.BookingID || p["BookingID"] || p.bookingid) === bID && (normalizeText(p.MRN || p.PatientMRN || p["MRN"] || p["PatientMRN"]) === mrn));
           return {
             MRN: mrn,
             PhotoUrl: photoMatch ? `https://www.appsheet.com/image/getimageurl?appName=MedartisPhase1-5435197&tableName=Usage%20Photos&fileName=${encodeURIComponent(photoMatch.Photo || photoMatch.UsagePhoto || '')}&width=1000` : '',
@@ -139,7 +165,7 @@ export async function fetchBookingsLog(): Promise<{ success: boolean; data: Enha
           "Selected Sets": item["Selected Sets"] || '',
           "Last Updated": item["Last Updated"] || '',
           Driver: item.Driver || '',
-          "Patient MRN": item["Patient MRN"] || '',
+          "Patient MRN": getBookingFieldValue(item, ['Patient MRN', 'PatientMRN', 'patient MRN', 'patientmrn']),
           "Delivery Note": item["Delivery Note"] || '',
           "Delivery Note Link": item["Delivery Note Link"] || '',
           "Sales Email": item["Sales Email"] || '',
