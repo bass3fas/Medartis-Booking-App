@@ -21,7 +21,7 @@ const AddBookingSchema = z.object({
 
 // Helper function to generate a short, random alphanumeric string for Booking ID (e.g., B-a1B2)
 function generateShortUniqueId(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let result = '';
   const randomBytes = crypto.randomBytes(4); 
   for (let i = 0; i < 4; i++) {
