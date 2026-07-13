@@ -36,10 +36,10 @@ export async function addBookingAction(formData: FormData) {
   const validation = AddBookingSchema.safeParse(rawData);
 
   if (!validation.success) {
-    console.error('❌ Schema Validation Failed:', validation.error.errors);
+    console.error('❌ Schema Validation Failed:', validation.error.issues);
     return { 
       success: false, 
-      error: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ') 
+      error: validation.error.issues.map((e) => `${e.path.join('.')}: ${e.message}`).join(', ') 
     };
   }
 
@@ -101,12 +101,13 @@ export async function addBookingAction(formData: FormData) {
       message: `Booking ${newBookingID} created successfully.` 
     };
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Catch any network, credential permission, or API block errors here cleanly
     console.error('🔴 GOOGLE SHEETS API ERROR:', error);
+    const message = error instanceof Error ? error.message : 'An unexpected database error occurred while creating the booking.';
     return { 
       success: false, 
-      error: error.message || 'An unexpected database error occurred while creating the booking.' 
+      error: message 
     };
   }
 }

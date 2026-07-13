@@ -5,6 +5,7 @@ import { useState, useEffect, Fragment } from 'react';
 import Link from 'next/link';
 import { fetchBookingsLog, EnhancedBooking } from '../actions/getBookingsAction';
 import AddBookingModal from '../components/AddBookingModal';
+import EditBookingModal from '../components/EditBookingModal';
 import BookingFullScreenView from '../components/BookingFullScreenView';
 import { BookingSet } from '../types/interfaces';
 import SetDetailsDrawer from '../components/SetDetailsDrawer';
@@ -29,6 +30,7 @@ export default function BookingsDashboardPage() {
   const [isSetDrawerOpen, setIsSetDrawerOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [fullScreenBooking, setFullScreenBooking] = useState<EnhancedBooking | null>(null);
+  const [editingBooking, setEditingBooking] = useState<EnhancedBooking | null>(null);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [hospitalFilter, setHospitalFilter] = useState('all');
@@ -187,6 +189,13 @@ export default function BookingsDashboardPage() {
     'Demo': 'bg-amber-500/10 text-amber-600 border border-amber-500/20',
     'Removal': 'bg-slate-500/10 text-slate-600 border border-slate-500/20',
     'Canceled': 'bg-error/10 text-error border border-error/20 font-bold'
+  };
+
+  const canEditBooking = (booking: EnhancedBooking) => {
+    const role = (currentUserRole || '').trim().toLowerCase();
+    if (role === 'admin' || role === 'warehouse') return true;
+    if (role === 'sales') return (booking.Salesperson || '').trim().toLowerCase() === (currentUserName || '').trim().toLowerCase();
+    return false;
   };
 
   const toggleRowExpansion = (booking: EnhancedBooking) => {
@@ -351,6 +360,7 @@ export default function BookingsDashboardPage() {
                 <th className="p-3">Sales Person</th>
                 <th className="p-3"></th>
                 <th className="p-3 text-center">Status</th>
+                <th className="p-3 text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-base-200 font-medium text-base-content/90">
@@ -417,12 +427,25 @@ export default function BookingsDashboardPage() {
                           {rawStatusKey === 'usage received' ? 'Used' : displayStatus || 'Pending'}
                         </span>
                       </td>
+                      <td className="p-3 text-center">
+                        {canEditBooking(booking) ? (
+                          <button
+                            type="button"
+                            onClick={() => setEditingBooking(booking)}
+                            className="btn btn-xs btn-primary btn-outline font-bold"
+                          >
+                            Edit
+                          </button>
+                        ) : (
+                          <span className="text-[10px] font-mono opacity-30">Locked</span>
+                        )}
+                      </td>
                     </tr>
 
                     {/* Expandable Box Frame */}
                     {isExpanded && (
                       <tr className="bg-base-50/20">
-                        <td colSpan={10} className="p-4 border-l-2 border-primary bg-base-100/60">
+                        <td colSpan={11} className="p-4 border-l-2 border-primary bg-base-100/60">
                           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
                             
                             {/* Left Section: Set Requirements & Special Requests Container */}
@@ -794,6 +817,17 @@ export default function BookingsDashboardPage() {
       <AddBookingModal
         isOpen={isAddModalOpen}
         onClose={() => setIsAddModalOpen(false)}
+        onSuccess={initPage}
+        currentUserName={currentUserName}
+        currentUserRole={currentUserRole}
+        salesPeople={uniqueSalesPeople}
+        hospitals={uniqueHospitals}
+      />
+
+      <EditBookingModal
+        booking={editingBooking}
+        isOpen={Boolean(editingBooking)}
+        onClose={() => setEditingBooking(null)}
         onSuccess={initPage}
         currentUserName={currentUserName}
         currentUserRole={currentUserRole}
