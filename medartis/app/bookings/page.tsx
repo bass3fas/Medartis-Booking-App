@@ -5,10 +5,12 @@ import { useState, useEffect, Fragment } from 'react';
 import Link from 'next/link';
 import { fetchBookingsLog, EnhancedBooking } from '../actions/getBookingsAction';
 import AddBookingModal from '../components/AddBookingModal';
+import EditBookingModal from '../components/EditBookingModal';
 import BookingFullScreenView from '../components/BookingFullScreenView';
+import AddUsagePanel from '../components/AddUsagePanel';
 import { BookingSet } from '../types/interfaces';
 import SetDetailsDrawer from '../components/SetDetailsDrawer';
-import { VirtualSet } from '../actions/getSetsAction';
+import { fetchEnrichedSets, VirtualSet } from '../actions/getSetsAction';
 import { buildAppSheetImageUrl } from '../lib/appsheet-image-url';
 
 export default function BookingsDashboardPage() {
@@ -29,6 +31,8 @@ export default function BookingsDashboardPage() {
   const [isSetDrawerOpen, setIsSetDrawerOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [fullScreenBooking, setFullScreenBooking] = useState<EnhancedBooking | null>(null);
+  const [editingBooking, setEditingBooking] = useState<EnhancedBooking | null>(null);
+  const [availableSets, setAvailableSets] = useState<VirtualSet[]>([]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [hospitalFilter, setHospitalFilter] = useState('all');
@@ -63,12 +67,15 @@ export default function BookingsDashboardPage() {
 
   const loadBookings = async () => {
     setLoading(true);
-    const res = await fetchBookingsLog();
-    if (res.success) {
-      setBookings(res.data);
+    const [bookingsRes, setsRes] = await Promise.all([fetchBookingsLog(), fetchEnrichedSets()]);
+    if (bookingsRes.success) {
+      setBookings(bookingsRes.data);
       setErrorMessage('');
     } else {
-      setErrorMessage(res.error || 'Failed to sync data matrices.');
+      setErrorMessage(bookingsRes.error || 'Failed to sync data matrices.');
+    }
+    if (setsRes.success) {
+      setAvailableSets(setsRes.data);
     }
     setLoading(false);
   };
@@ -187,6 +194,13 @@ export default function BookingsDashboardPage() {
     'Demo': 'bg-amber-500/10 text-amber-600 border border-amber-500/20',
     'Removal': 'bg-slate-500/10 text-slate-600 border border-slate-500/20',
     'Canceled': 'bg-error/10 text-error border border-error/20 font-bold'
+  };
+
+  const canEditBooking = (booking: EnhancedBooking) => {
+    const role = (currentUserRole || '').trim().toLowerCase();
+    if (role === 'admin' || role === 'warehouse') return true;
+    if (role === 'sales') return (booking.Salesperson || '').trim().toLowerCase() === (currentUserName || '').trim().toLowerCase();
+    return false;
   };
 
   const toggleRowExpansion = (booking: EnhancedBooking) => {
@@ -351,6 +365,7 @@ export default function BookingsDashboardPage() {
                 <th className="p-3">Sales Person</th>
                 <th className="p-3"></th>
                 <th className="p-3 text-center">Status</th>
+                <th className="p-3 text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-base-200 font-medium text-base-content/90">
@@ -417,12 +432,25 @@ export default function BookingsDashboardPage() {
                           {rawStatusKey === 'usage received' ? 'Used' : displayStatus || 'Pending'}
                         </span>
                       </td>
+                      <td className="p-3 text-center">
+                        {canEditBooking(booking) ? (
+                          <button
+                            type="button"
+                            onClick={() => setEditingBooking(booking)}
+                            className="btn btn-xs btn-primary btn-outline font-bold"
+                          >
+                            Edit
+                          </button>
+                        ) : (
+                          <span className="text-[10px] font-mono opacity-30">Locked</span>
+                        )}
+                      </td>
                     </tr>
 
                     {/* Expandable Box Frame */}
                     {isExpanded && (
                       <tr className="bg-base-50/20">
-                        <td colSpan={10} className="p-4 border-l-2 border-primary bg-base-100/60">
+                        <td colSpan={11} className="p-4 border-l-2 border-primary bg-base-100/60">
                           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
                             
                             {/* Left Section: Set Requirements & Special Requests Container */}
@@ -555,10 +583,19 @@ export default function BookingsDashboardPage() {
                             </div>
 
                             {/* Right Section: Individual MRN Tab Workspace */}
-                            <div className="lg:col-span-7 bg-base-100 border border-base-200 rounded-xl p-4 shadow-xs flex flex-col">
-                              <h4 className="text-[10px] uppercase font-mono tracking-wider text-base-content/50 font-black mb-2.5">
-                                Select Patient Record File Partition
-                              </h4>
+                            <div className="lg:col-span-7 space-y-4">
+                              <div className="rounded-2xl border border-base-200 bg-gradient-to-br from-base-100 to-base-50 p-4 shadow-sm">
+                                <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                                  <div>
+                                    <h4 className="text-sm font-black tracking-tight text-base-content">Clinical usage workspace</h4>
+                                    <p className="text-[10px] uppercase font-mono tracking-wider text-base-content/50 font-black">Patient partitions, consumption summary, verification media</p>
+                                  </div>
+                                  <div className="grid grid-cols-3 gap-2 text-center font-mono text-[10px]">
+                                    <div className="rounded-xl border border-base-200 bg-base-100 px-3 py-2"><span className="block text-sm font-black text-primary">{booking.PatientUsages.length}</span><span className="opacity-50">MRNs</span></div>
+                                    <div className="rounded-xl border border-base-200 bg-base-100 px-3 py-2"><span className="block text-sm font-black text-info">{selectedSetsArray.length}</span><span className="opacity-50">Sets</span></div>
+                                    <div className="rounded-xl border border-base-200 bg-base-100 px-3 py-2"><span className="block text-sm font-black text-warning">{booking.PatientUsages.reduce((sum, usage) => sum + usage.Items.length, 0)}</span><span className="opacity-50">Items</span></div>
+                                  </div>
+                                </div>
 
                               {/* MRN Navigation Tab List */}
                               <div className="flex flex-wrap gap-1.5 border-b border-base-200 pb-2 mb-3">
@@ -687,6 +724,8 @@ export default function BookingsDashboardPage() {
                                 </div>
                               )}
 
+                              </div>
+                              <AddUsagePanel booking={booking} onSuccess={initPage} />
                             </div>
 
                           </div>
@@ -799,6 +838,19 @@ export default function BookingsDashboardPage() {
         currentUserRole={currentUserRole}
         salesPeople={uniqueSalesPeople}
         hospitals={uniqueHospitals}
+      />
+
+      <EditBookingModal
+        key={editingBooking?.BookingID || 'closed'}
+        booking={editingBooking}
+        isOpen={Boolean(editingBooking)}
+        onClose={() => setEditingBooking(null)}
+        onSuccess={initPage}
+        currentUserName={currentUserName}
+        currentUserRole={currentUserRole}
+        salesPeople={uniqueSalesPeople}
+        hospitals={uniqueHospitals}
+        availableSets={availableSets}
       />
 
       <BookingFullScreenView booking={fullScreenBooking} onClose={() => setFullScreenBooking(null)} />
