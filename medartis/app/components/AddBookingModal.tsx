@@ -4,6 +4,80 @@
 import { useState, useTransition, useRef, useEffect } from 'react';
 import { addBookingAction } from '../actions/addBookingAction';
 
+// Minimal interfaces to support shared components
+interface BookingSetOption {
+  SetID: string;
+  SetName: string;
+  computedStatus?: string;
+  LoanType?: string;
+}
+
+const REQUESTED_SET_OPTIONS: BookingSetOption[] = [
+  'ANKLE 2.8/3.5', 'CLAVICLE 2.8', 'CCS 1.7', 'CCS 2.2 / 3.0', 'CCS SPEEDTIP 4.0',
+  'CCS HEADED 4.0', 'CCS SPEEDTIP 5.0', 'CCS HEADED 5.0', 'CCS SPEEDTIP 7.0',
+  'DISTAL RADIUS 2.5', 'ULNA SHORTENING 2.5', 'ELBOW 2.8', 'CORONOID AND RADIAL HEAD 2.0',
+  'FOREARM SHAFT 2.8', 'FOOT FORE AND MID 2.8', 'FOOT MID AND HIND 2.8/3.5',
+  'Hand 1.2/1.5-2.0/2.3', 'SCAPHOID', 'Hand Arthrodesis 2.0/2.3', 'KERI TOUCH', 'KERI FLEX',
+  'DISTAL RADIUS ARTHRODESIS', 'DISTAL RADIUS ULNA & RIM', 'DISTAL RADIUS DORSAL & XL',
+  'Modus MidFace', 'Modus Mandible', 'Modus Transbuccle', 'Modus Orbital Floor', 'MODUS IMF',
+  'DIMEDA WIRES AND ARCH BARS', 'CCS 3.A Long Screws Short thread', 'CCS 3.A Long Screws Long thread',
+  
+].map(name => ({ SetID: name, SetName: name })).sort((a, b) => a.SetName.localeCompare(b.SetName));
+
+function setBadgeClasses(option?: BookingSetOption) {
+  return 'border-green-300 bg-green-50 text-green-700'; // Simplified for this context
+}
+
+function MultiSetSelect({ label, name, disabled, selected, onChange, options, mode }: { label: string; name: string; disabled?: boolean; selected: string[]; onChange: (value: string[]) => void; options: BookingSetOption[]; mode: 'name' | 'id'; }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const optionLabel = (option: BookingSetOption) => mode === 'name' ? `${option.SetName || option.SetID}` : `${option.SetID} — ${option.SetName || 'Unnamed set'}`;
+  const optionValue = (option: BookingSetOption) => mode === 'name' ? (option.SetName || option.SetID) : option.SetID;
+  const toggle = (value: string) => onChange(selected.includes(value) ? selected.filter((item) => item !== value) : [...selected, value]);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => { if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) setIsOpen(false); };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  return (
+    <div className="form-control mt-4">
+      <label className="label-text pb-1 text-xs font-semibold">{label}</label>
+      <input type="hidden" name={name} value={selected.join(', ')} />
+      <div className="relative" ref={dropdownRef}>
+        <button type="button" disabled={disabled} onClick={() => setIsOpen((value) => !value)} className="flex min-h-[2.5rem] w-full items-center justify-between rounded-lg border border-base-300 bg-base-100 px-3 py-2 text-left text-sm shadow-sm transition-all focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:bg-base-200 disabled:text-base-content/40">
+          <div className="flex flex-wrap gap-1.5 max-w-[90%]">
+            {selected.length === 0 ? <span className="text-base-content/40">Choose one or more sets...</span> : selected.map((value) => {
+              const option = options.find((item) => optionValue(item) === value);
+              return (
+                <span key={value} className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-bold ${setBadgeClasses(option)}`}>
+                  {value}
+                  <span role="button" tabIndex={0} className="rounded-full bg-current/10 px-1" onClick={(event) => { event.stopPropagation(); toggle(value); }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') toggle(value); }}>×</span>
+                </span>
+              );
+            })}
+          </div>
+          <span className={`text-xs text-base-content/50 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}>▼</span>
+        </button>
+        {isOpen && !disabled && (
+          <div className="absolute left-0 right-0 z-50 mt-1 max-h-60 overflow-y-auto rounded-xl border border-base-200 bg-base-100 p-2 shadow-xl animate-in fade-in slide-in-from-top-2 duration-150">
+            {options.map((option) => {
+              const value = optionValue(option);
+              const checked = selected.includes(value);
+              return (
+                <label key={`${name}-${value}`} className={`flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors hover:bg-base-200/60 ${checked ? 'bg-primary/5 font-semibold text-primary' : 'text-base-content'}`}>
+                  <input type="checkbox" className="checkbox checkbox-primary checkbox-xs rounded" checked={checked} onChange={() => toggle(value)} />
+                  <span className="flex-1 select-none">{optionLabel(option)}</span>
+                </label>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 interface AddBookingModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -13,14 +87,6 @@ interface AddBookingModalProps {
   salesPeople: string[];
   hospitals: string[];
 }
-
-const SET_OPTIONS = [
-  'ANKLE 2.8/3.5',
-  'CLAVICLE 2.8',
-  'CCS 1.7',
-  'CCS 2.2/3.0',
-  'CCS 4.0',
-];
 
 export default function AddBookingModal({
   isOpen,
@@ -33,22 +99,8 @@ export default function AddBookingModal({
 }: AddBookingModalProps) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [selectedSets, setSelectedSets] = useState<string[]>([]);
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  
+  const [requestedSets, setRequestedSets] = useState<string[]>([]);
   const formRef = useRef<HTMLFormElement>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-
-  // Close dropdown if user clicks outside of it
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsDropdownOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   const getTomorrow = () => {
     const today = new Date();
@@ -61,12 +113,6 @@ export default function AddBookingModal({
     return new Date().toISOString().split('T')[0];
   };
 
-  const toggleSetSelection = (set: string) => {
-    setSelectedSets((prev) =>
-      prev.includes(set) ? prev.filter((item) => item !== set) : [...prev, set]
-    );
-  };
-
   const isAdmin = (currentUserRole || '').trim().toLowerCase() === 'admin';
   const salespersonValue = currentUserName?.trim() || '';
 
@@ -76,10 +122,6 @@ export default function AddBookingModal({
 
     const formData = new FormData(e.currentTarget);
 
-    // Cleanly pass our stateful sets selection array as a single comma-separated string
-    formData.delete('RequestedSets');
-    formData.append('RequestedSets', selectedSets.join(', '));
-
     startTransition(async () => {
       console.log('Sending structured layout to server...');
       const result = await addBookingAction(formData);
@@ -87,7 +129,7 @@ export default function AddBookingModal({
       console.log('Server Action Result:', result);
 
       if (result.success) {
-        setSelectedSets([]); // Clear selected sets state tracking
+        setRequestedSets([]); // Clear selected sets state tracking
         onSuccess();
         onClose();
         formRef.current?.reset();
@@ -252,55 +294,7 @@ export default function AddBookingModal({
                     </select>
                   </div>
 
-                  {/* Professional Checkbox Dropdown Component Layer */}
-                  <div className="form-control mt-4" ref={dropdownRef}>
-                    <label className="label-text pb-1 text-xs font-semibold">Requested Sets</label>
-                    <div className="relative">
-                      <button
-                        type="button"
-                        onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                        className="flex min-h-[2.5rem] w-full items-center justify-between rounded-lg border border-base-300 bg-base-100 px-3 py-2 text-left text-sm shadow-sm transition-all focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                      >
-                        <div className="flex flex-wrap gap-1 max-w-[90%]">
-                          {selectedSets.length === 0 ? (
-                            <span className="text-base-content/40">Select instrument sets...</span>
-                          ) : (
-                            selectedSets.map((set) => (
-                              <span key={set} className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                                {set}
-                              </span>
-                            ))
-                          )}
-                        </div>
-                        <span className={`text-xs text-base-content/50 transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : ''}`}>
-                          ▼
-                        </span>
-                      </button>
-
-                      {/* Animated Dropdown Menu Overlays */}
-                      {isDropdownOpen && (
-                        <div className="absolute left-0 right-0 z-50 mt-1 max-h-60 overflow-y-auto rounded-xl border border-base-200 bg-base-100 p-2 shadow-xl animate-in fade-in slide-in-from-top-2 duration-150">
-                          {SET_OPTIONS.map((opt) => {
-                            const isChecked = selectedSets.includes(opt);
-                            return (
-                              <label
-                                key={opt}
-                                className={`flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors hover:bg-base-200/60 ${isChecked ? 'bg-primary/5 font-semibold text-primary' : 'text-base-content'}`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={isChecked}
-                                  onChange={() => toggleSetSelection(opt)}
-                                  className="checkbox checkbox-primary checkbox-xs rounded"
-                                />
-                                <span className="flex-1 select-none">{opt}</span>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                  <MultiSetSelect label="Requested Sets" name="Requested Sets" selected={requestedSets} onChange={setRequestedSets} options={REQUESTED_SET_OPTIONS} mode="name" />
 
                 </div>
               </div>
