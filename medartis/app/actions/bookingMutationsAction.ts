@@ -1,5 +1,6 @@
 'use server';
 
+import crypto from 'crypto';
 import { sheets, SPREADSHEET_ID } from '../lib/google-sheets';
 import { EnhancedBooking } from './getBookingsAction';
 
@@ -76,14 +77,89 @@ async function findBookingRow(bookingId: string) {
   return { headers, row: dataRows[rowOffset], rowNumber: rowOffset + 2, booking: rowToBooking(headers, dataRows[rowOffset]) };
 }
 
+async function getSheetId(sheetName: string): Promise<number> {
+  const response = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID });
+  const sheet = response.data.sheets?.find(s => s.properties?.title === sheetName);
+  if (sheet?.properties?.sheetId == null) throw new Error(`Sheet "${sheetName}" not found.`);
+  return sheet.properties.sheetId;
+}
+
+async function syncBookingSets(bookingId: string, newSetIds: string[]) {
+  if (!bookingId) return;
+
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: 'BookingSets!A:C', // BookingSetID, BookingID, SetID
+  });
+
+  const rows = response.data.values || [];
+  const header = rows.shift() || [];
+  const bookingIdCol = header.indexOf('BookingID');
+  const setIdCol = header.indexOf('SetID');
+
+  if (bookingIdCol === -1 || setIdCol === -1) {
+    throw new Error('BookingSets sheet must have BookingID and SetID columns.');
+  }
+
+  const existingSetsForBooking = new Map<string, number>(); // Map SetID to its 1-based rowIndex
+  rows.forEach((row, index) => {
+    if (row[bookingIdCol] === bookingId) {
+      const setId = row[setIdCol];
+      if (setId) {
+        existingSetsForBooking.set(setId, index + 2); // +1 for header, +1 for 0-based index
+      }
+    }
+  });
+
+  const newSetIdsSet = new Set(newSetIds);
+  const existingSetIdsSet = new Set(existingSetsForBooking.keys());
+
+  const setsToAdd = newSetIds.filter(id => !existingSetIdsSet.has(id));
+  const setsToRemove = Array.from(existingSetIdsSet).filter(id => !newSetIdsSet.has(id));
+
+  const requests = [];
+
+  // Important: Process deletions in reverse order of row index to avoid shifting issues
+  const rowsToRemove = setsToRemove
+    .map(setId => existingSetsForBooking.get(setId))
+    .filter((rowIndex): rowIndex is number => rowIndex != null)
+    .sort((a, b) => b - a);
+
+  const sheetId = await getSheetId('BookingSets');
+  for (const rowIndex of rowsToRemove) {
+    requests.push({
+      deleteDimension: {
+        range: {
+          sheetId: sheetId,
+          dimension: 'ROWS',
+          startIndex: rowIndex - 1,
+          endIndex: rowIndex,
+        },
+      },
+    });
+  }
+
+  if (requests.length > 0) {
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId: SPREADSHEET_ID, requestBody: { requests } });
+  }
+
+  if (setsToAdd.length > 0) {
+    const newRows = setsToAdd.map(setId => [`BS-${crypto.randomBytes(4).toString('hex')}`, bookingId, setId]);
+    await sheets.spreadsheets.values.append({ spreadsheetId: SPREADSHEET_ID, range: 'BookingSets!A1', valueInputOption: 'USER_ENTERED', requestBody: { values: newRows } });
+  }
+}
+
 export async function updateBookingAction(formData: FormData) {
   try {
     const bookingId = normalize(formData.get('BookingID'));
     const context = { currentUserName: normalize(formData.get('currentUserName')), currentUserRole: normalize(formData.get('currentUserRole')) };
     if (!bookingId) return { success: false, error: 'Booking ID is required.' };
+
+    // First, fetch the existing booking and check permissions
     const { headers, row, rowNumber, booking } = await findBookingRow(bookingId);
     if (!canUpdateBooking(booking, context)) return { success: false, error: 'You do not have permission to update this booking.' };
 
+    // Now, construct the updated booking object
     const allowedFields = allowedFieldsForRole(context);
     const nextBooking: Record<string, string> = { ...booking, BookingID: bookingId, 'Last Updated': new Date().toISOString() };
     BOOKING_HEADERS.forEach((field) => {
@@ -92,6 +168,9 @@ export async function updateBookingAction(formData: FormData) {
       nextBooking[field] = normalize(formData.get(field));
     });
     if (normalizeRole(context.currentUserRole) === 'admin' && formData.has('Salesperson')) nextBooking.Salesperson = normalize(formData.get('Salesperson'));
+
+    const selectedSets = (formData.get('Selected Sets') as string || '').split(',').map(s => s.trim()).filter(Boolean);
+    await syncBookingSets(bookingId, selectedSets);
 
     const outputHeaders = headers.length ? headers : [...BOOKING_HEADERS];
     const nextRow = outputHeaders.slice(0, BOOKING_HEADERS.length).map((header, index) => nextBooking[header] ?? row[index] ?? '');

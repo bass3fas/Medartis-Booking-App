@@ -7,10 +7,9 @@ import { fetchBookingsLog, EnhancedBooking } from '../actions/getBookingsAction'
 import AddBookingModal from '../components/AddBookingModal';
 import EditBookingModal from '../components/EditBookingModal';
 import BookingFullScreenView from '../components/BookingFullScreenView';
-import AddUsagePanel from '../components/AddUsagePanel';
-import { BookingSet } from '../types/interfaces';
+import AddUsageModal from '../components/AddUsageModal';
 import SetDetailsDrawer from '../components/SetDetailsDrawer';
-import { fetchEnrichedSets, VirtualSet } from '../actions/getSetsAction';
+import { fetchEnrichedSets, VirtualSet, EnrichedTray, fetchTraysAndUsageForSet } from '../actions/getSetsAction';
 import { buildAppSheetImageUrl } from '../lib/appsheet-image-url';
 
 export default function BookingsDashboardPage() {
@@ -32,6 +31,10 @@ export default function BookingsDashboardPage() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [fullScreenBooking, setFullScreenBooking] = useState<EnhancedBooking | null>(null);
   const [editingBooking, setEditingBooking] = useState<EnhancedBooking | null>(null);
+  const [usageModalState, setUsageModalState] = useState<{ isOpen: boolean; booking: EnhancedBooking | null; set: VirtualSet | null; trays: EnrichedTray[] }>({
+    isOpen: false, booking: null, set: null, trays: []
+  });
+
   const [availableSets, setAvailableSets] = useState<VirtualSet[]>([]);
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -218,6 +221,23 @@ export default function BookingsDashboardPage() {
     }
   };
 
+  const handleOpenUsageModal = async (booking: EnhancedBooking, setId: string) => {
+    const set = availableSets.find(s => s.SetID === setId) || null;
+    if (!set) {
+      setErrorMessage(`Could not find details for set ${setId}`);
+      return;
+    }
+
+    setLoading(true);
+    const traysRes = await fetchTraysAndUsageForSet(setId);
+    setLoading(false);
+
+    if (traysRes.success) {
+      setUsageModalState({ isOpen: true, booking, set, trays: traysRes.trays });
+    } else {
+      setErrorMessage(traysRes.error || `Failed to load trays for ${setId}`);
+    }
+  };
   return (
     <div className="w-full p-2 font-sans">
       <div className="flex justify-between items-center mb-6 pb-2 border-b border-base-300">
@@ -476,7 +496,7 @@ export default function BookingsDashboardPage() {
                                     <div className="space-y-2">
                                       <div className="flex flex-wrap gap-1.5">
                                         {booking.RelatedBookingSets.map((set: any, idx: number) => {
-                                          const activePhotosArray = [
+                                                  const activePhotosArray = [ // This logic seems duplicated, consider refactoring
                                             set.Photo1, set.Photo2, set.Photo3,
                                             set.Photo4, set.Photo5, set.Photo6, set.Photo7
                                           ].filter(Boolean);
@@ -493,13 +513,20 @@ export default function BookingsDashboardPage() {
                                                 }));
                                               }}
                                               className={`text-left px-2.5 py-1.5 rounded font-mono text-[11px] border font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs ${
-                                                isActive
-                                                  ? 'bg-primary text-primary-content border-primary'
-                                                  : 'bg-info/10 hover:bg-info/20 text-info border-info/20'
+                                                      isActive
+                                                        ? 'bg-primary text-primary-content border-primary'
+                                                        : 'bg-info/10 hover:bg-info/20 text-info border-info/20'
                                               }`}
                                             >
-                                              📦 {set.SetID}
-                                              <span className="text-[9px] opacity-70 font-medium">({activePhotosArray.length} 📷)</span>
+                                              <button
+                                                type="button"
+                                                className="flex-1 text-left"
+                                                onClick={() => handleOpenUsageModal(booking, set.SetID)}
+                                                title={`Add usage for ${set.SetID}`}
+                                              >
+                                                📦 {set.SetID}
+                                                <span className="text-[9px] opacity-70 font-medium">({activePhotosArray.length} 📷)</span>
+                                              </button>
                                             </button>
                                           );
                                         })}
@@ -571,7 +598,7 @@ export default function BookingsDashboardPage() {
                                 </div>
                               </div>
 
-                              {/* Special Request Relocated Below Sets & Highlighted */}
+                              {/* Special Request Highlighted Box */}
                               <div className="bg-amber-500/5 border border-amber-500/20 p-3.5 rounded-xl shadow-xs">
                                 <h4 className="text-[10px] uppercase font-mono tracking-wider text-amber-700 font-black mb-1 flex items-center gap-1">
                                   ⚠️ Special Logistics Instructions
@@ -584,7 +611,7 @@ export default function BookingsDashboardPage() {
 
                             {/* Right Section: Individual MRN Tab Workspace */}
                             <div className="lg:col-span-7 space-y-4">
-                              <div className="rounded-2xl border border-base-200 bg-gradient-to-br from-base-100 to-base-50 p-4 shadow-sm">
+                              <div className="rounded-2xl border border-base-200 bg-gradient-to-br from-base-100 to-base-50 p-4 shadow-md">
                                 <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                                   <div>
                                     <h4 className="text-sm font-black tracking-tight text-base-content">Clinical usage workspace</h4>
@@ -724,8 +751,14 @@ export default function BookingsDashboardPage() {
                                 </div>
                               )}
 
+                                <div className="border-t border-base-200 pt-4 flex justify-end">
+                                  <button
+                                    onClick={() => handleOpenUsageModal(booking, selectedSetTabs[booking.BookingID] || booking.RelatedBookingSets[0]?.SetID)}
+                                    disabled={!selectedSetTabs[booking.BookingID] && booking.RelatedBookingSets.length === 0}
+                                    className="btn btn-secondary btn-sm font-bold"
+                                  >+ Add Usage</button>
+                                </div>
                               </div>
-                              <AddUsagePanel booking={booking} onSuccess={initPage} />
                             </div>
 
                           </div>
@@ -855,6 +888,14 @@ export default function BookingsDashboardPage() {
 
       <BookingFullScreenView booking={fullScreenBooking} onClose={() => setFullScreenBooking(null)} />
 
+      <AddUsageModal
+        isOpen={usageModalState.isOpen}
+        onClose={() => setUsageModalState({ isOpen: false, booking: null, set: null, trays: [] })}
+        onSuccess={initPage}
+        booking={usageModalState.booking}
+        set={usageModalState.set}
+        trays={usageModalState.trays}
+      />
       <SetDetailsDrawer set={drawerTargetSet as VirtualSet | null} isOpen={isSetDrawerOpen} onClose={() => setIsSetDrawerOpen(false)} />
     </div>
   );

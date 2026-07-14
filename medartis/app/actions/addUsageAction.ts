@@ -11,60 +11,69 @@ function newUsageId() {
   return `U-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
 }
 
+interface UsageItem {
+  id: number;
+  trayId: string;
+  partNumber: string;
+  itemId: string;
+  description: string;
+  qtyUsed: number;
+  qtyRefilled: number;
+}
+
 export async function addBookingUsageAction(formData: FormData) {
   try {
     if (!SPREADSHEET_ID) throw new Error('GOOGLE_SPREADSHEET_ID environment variable is missing or undefined.');
 
     const bookingId = normalize(formData.get('BookingID'));
     const setId = normalize(formData.get('SetID'));
-    const trayId = normalize(formData.get('TrayID'));
     const patientMRN = normalize(formData.get('PatientMRN'));
     const hospital = normalize(formData.get('Hospital'));
     const date = normalize(formData.get('Date')) || new Date().toISOString().slice(0, 10);
     const notes = normalize(formData.get('Notes'));
-    const partNumbers = formData.getAll('PartNumber').map(String);
-    const itemIds = formData.getAll('ItemID').map(String);
-    const descriptions = formData.getAll('Description').map(String);
-    const qtyUsed = formData.getAll('QtyUsed').map(String);
-    const qtyRefilled = formData.getAll('QtyRefilled').map(String);
+    const photo = normalize(formData.get('Photo'));
+    const usageItemsJSON = normalize(formData.get('usage_items'));
 
-    if (!bookingId || !setId || !trayId || !patientMRN) {
-      return { success: false, error: 'Booking, MRN, set, and tray are required.' };
+    if (!bookingId || !setId || !patientMRN) {
+      return { success: false, error: 'Booking, Set, and Patient MRN are required.' };
     }
 
-    const rows = partNumbers
-      .map((partNumber, index) => ({
-        partNumber: partNumber.trim(),
-        itemId: (itemIds[index] || '').trim(),
-        description: (descriptions[index] || '').trim(),
-        used: Number(qtyUsed[index] || 0),
-        refilled: Number(qtyRefilled[index] || 0),
-      }))
-      .filter((item) => item.partNumber && item.used > 0)
-      .map((item) => [
+    let usageItems: UsageItem[];
+    try {
+      usageItems = JSON.parse(usageItemsJSON);
+      if (!Array.isArray(usageItems) || usageItems.length === 0) {
+        return { success: false, error: 'No usage items were provided.' };
+      }
+    } catch {
+      return { success: false, error: 'Invalid usage items data format.' };
+    }
+
+    const rows = usageItems
+      .filter(item => item.partNumber && item.qtyUsed > 0)
+      .map(item => [
         newUsageId(),
         bookingId,
         setId,
-        trayId,
+        item.trayId,
         item.partNumber,
-        '',
-        String(item.used),
+        '', // LotID
+        String(item.qtyUsed),
         patientMRN,
         date,
         hospital,
-        String(item.refilled || 0),
+        String(item.qtyRefilled || 0),
         notes,
-        '',
+        photo,
         item.itemId,
         new Date().toISOString(),
-        '',
-        '',
-        item.used === item.refilled ? 'Refilled' : 'Pending to Refill',
+        '', // Set Delivery Note
+        '', // Refill Delivery Note
+        item.qtyUsed === item.qtyRefilled ? 'Refilled' : 'Pending to Refill',
         item.description,
       ]);
 
     if (rows.length === 0) {
-      return { success: false, error: 'Choose at least one part and enter a used quantity greater than zero.' };
+      return { success: false, error: 'No valid usage items to save. Ensure at least one part has a quantity used greater than zero.' };
     }
 
     await sheets.spreadsheets.values.append({
