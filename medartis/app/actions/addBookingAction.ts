@@ -82,12 +82,26 @@ export async function addBookingAction(formData: FormData) {
       data.Type                 // 18: Type
     ];
 
-    console.log(`🚀 Attempting to append row to tab [Bookings] for ID: ${newBookingID}...`);
-
-    // 3. CRUCIAL: The actual write instruction to push the array directly to Google Sheets API
-    const response = await sheets.spreadsheets.values.append({
+    // Do not use values.append here. Google chooses the beginning of the detected
+    // data table for append operations, which can be column P when that column
+    // contains stray/legacy data. Booking IDs are the source of truth in column A,
+    // so explicitly write the row immediately after the last BookingID instead.
+    const bookingIdColumn = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: 'Bookings!A1:S', // Targets the explicit 'Bookings' tab range matrix
+      range: 'Bookings!A2:A',
+    });
+    const existingBookingIds = bookingIdColumn.data.values || [];
+    const lastBookingRowOffset = existingBookingIds.reduce(
+      (lastOffset, row, offset) => (String(row[0] || '').trim() ? offset : lastOffset),
+      -1
+    );
+    const targetRow = lastBookingRowOffset + 3; // header row + zero-based offset + next row
+
+    console.log(`🚀 Writing booking ${newBookingID} to Bookings!A${targetRow}:S${targetRow}...`);
+
+    const response = await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `Bookings!A${targetRow}:S${targetRow}`,
       valueInputOption: 'USER_ENTERED',
       requestBody: { 
         values: [newRow] 
