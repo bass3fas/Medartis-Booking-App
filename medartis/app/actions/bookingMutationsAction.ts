@@ -93,7 +93,7 @@ async function syncBookingSets(bookingId: string, newSetIds: string[]) {
   });
 
   const rows = response.data.values || [];
-  const header = rows.shift() || [];
+  const [header = [], ...dataRows] = rows;
   const bookingIdCol = header.indexOf('BookingID');
   const setIdCol = header.indexOf('SetID');
 
@@ -102,7 +102,7 @@ async function syncBookingSets(bookingId: string, newSetIds: string[]) {
   }
 
   const existingSetsForBooking = new Map<string, number>(); // Map SetID to its 1-based rowIndex
-  rows.forEach((row, index) => {
+  dataRows.forEach((row, index) => {
     if (row[bookingIdCol] === bookingId) {
       const setId = row[setIdCol];
       if (setId) {
@@ -144,8 +144,28 @@ async function syncBookingSets(bookingId: string, newSetIds: string[]) {
   }
 
   if (setsToAdd.length > 0) {
-    const newRows = setsToAdd.map(setId => [`BS-${crypto.randomBytes(4).toString('hex')}`, bookingId, setId]);
-    await sheets.spreadsheets.values.append({ spreadsheetId: SPREADSHEET_ID, range: 'BookingSets!A1', valueInputOption: 'USER_ENTERED', requestBody: { values: newRows } });
+    const newRows = setsToAdd.map(setId => [
+      `BS-${crypto.randomBytes(3).toString('hex').toUpperCase()}`,
+      bookingId,
+      setId,
+    ]);
+
+    // values.append detects a data table automatically. If stray values exist in
+    // another column, Google can append there instead of A:C. Determine the next
+    // BookingSets row from the A:C data and explicitly write the three columns.
+    const lastDataRowOffset = dataRows.reduce(
+      (lastOffset, row, offset) => (row.some((value) => normalize(value)) ? offset : lastOffset),
+      -1
+    );
+    const targetRow = lastDataRowOffset + 3; // header row + zero-based offset + next row
+
+    console.log(`Adding ${newRows.length} BookingSets row(s) at BookingSets!A${targetRow}:C${targetRow + newRows.length - 1}.`);
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `BookingSets!A${targetRow}:C${targetRow + newRows.length - 1}`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: newRows },
+    });
   }
 }
 
