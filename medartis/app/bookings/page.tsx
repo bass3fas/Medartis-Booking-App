@@ -12,6 +12,7 @@ import AddUsageModal from '../components/AddUsageModal';
 import AddSetPhotoModal from '../components/AddSetPhotoModal';
 import SetDetailsDrawer from '../components/SetDetailsDrawer';
 import { fetchEnrichedSets, VirtualSet } from '../actions/getSetsAction';
+import { deleteBookingSetPhotoAction } from '../actions/bookingMutationsAction';
 import { buildAppSheetImageUrl } from '../lib/appsheet-image-url';
 import type { BookingSet } from '../types/interfaces';
 
@@ -240,6 +241,52 @@ export default function BookingsDashboardPage() {
   const handleOpenUsageModal = (booking: EnhancedBooking, initialSetId?: string) => {
     setUsageModalState({ isOpen: true, booking, initialSetId });
   };
+
+  const handleDeleteSetPhoto = async (bookingId: string, setId: string, photoFileName: string) => {
+  if (!confirm(`Are you sure you want to delete this photo from set ${setId}? This cannot be undone.`)) {
+    return;
+  }
+
+  // 1. Extract clean relative path if a full AppSheet URL was passed
+  let cleanFileName = photoFileName;
+  if (photoFileName.includes('fileName=')) {
+    try {
+      const urlObj = new URL(photoFileName);
+      const rawParam = urlObj.searchParams.get('fileName');
+      if (rawParam) {
+        cleanFileName = decodeURIComponent(rawParam);
+      }
+    } catch (e) {
+      // Fallback regex if URL parsing fails
+      const match = photoFileName.match(/fileName=([^&]+)/);
+      if (match) cleanFileName = decodeURIComponent(match[1]);
+    }
+  }
+
+  console.log('[CLIENT] handleDeleteSetPhoto called with clean path:', { 
+    bookingId, 
+    setId, 
+    original: photoFileName,
+    cleaned: cleanFileName 
+  });
+
+  // 2. Build FormData with the cleaned relative path
+  const formData = new FormData();
+  formData.append('BookingID', bookingId);
+  formData.append('SetID', setId);
+  formData.append('photoFileName', cleanFileName); // 👈 Passes clean 'BookingSets_Images/...'
+  formData.append('currentUserName', currentUserName);
+  formData.append('currentUserRole', currentUserRole);
+
+  const result = await deleteBookingSetPhotoAction(formData);
+  if (result.success) {
+    initPage(); // Refresh data
+    console.log('[CLIENT] Photo deletion successful.');
+  } else {
+    console.error('[CLIENT] Photo deletion failed:', result.error);
+    alert(`Error: ${result.error}`);
+  }
+};
   return (
     <div className="w-full p-2 font-sans">
       <div className="flex justify-between items-center mb-6 pb-2 border-b border-base-300">
@@ -536,19 +583,29 @@ export default function BookingsDashboardPage() {
                                           selectedSet.Photo5,
                                           selectedSet.Photo6,
                                           selectedSet.Photo7,
-                                        ].filter((photo): photo is string => Boolean(photo)).map((photo) => buildBookingSetImageUrl(photo));
+                                        ].map((photo, i) => ({
+                                          fileName: photo || '',
+                                          url: buildBookingSetImageUrl(photo || ''),
+                                          photoKey: `photo${i + 1}`
+                                        })).filter(p => p.fileName);
 
                                         return (
                                           <div className="rounded-lg border border-base-200 bg-base-50/60 p-3 space-y-3">
                                             <div className="flex items-center justify-between">
                                               <div>
                                                 <p className="text-[10px] uppercase font-mono tracking-wider text-base-content/50 font-black">Set Photo Preview</p>
-                                                <Link
-                                                  href={`/sets?setId=${encodeURIComponent(selectedSet.SetID)}`}
-                                                  className="font-mono text-xs font-bold text-primary underline-offset-2 hover:underline"
-                                                >
-                                                  {selectedSet.SetID}
-                                                </Link>
+                                                <div className="flex items-center gap-2">
+                                                  <Link
+                                                    href={`/sets?setId=${encodeURIComponent(selectedSet.SetID)}`}
+                                                    className="font-mono text-xs font-bold text-primary underline-offset-2 hover:underline"
+                                                  >
+                                                    {selectedSet.SetID}
+                                                  </Link>
+                                                  <button
+                                                    onClick={() => { setDrawerTargetSet(availableSets.find(s => s.SetID === selectedSet.SetID)); setIsSetDrawerOpen(true); }}
+                                                    className="btn btn-xs btn-ghost"
+                                                  >Details</button>
+                                                </div>
                                               </div>
                                               <button
                                                 type="button"
@@ -561,20 +618,26 @@ export default function BookingsDashboardPage() {
 
                                             {selectedPhotos.length > 0 ? (
                                               <div className="grid grid-cols-2 gap-2">
-                                                {selectedPhotos.map((photo, idx) => (
-                                                  <a
-                                                    key={`${selectedSet.SetID}-${idx}`}
-                                                    href={photo}
-                                                    target="_blank"
-                                                    rel="noreferrer"
-                                                    className="group relative aspect-[4/3] overflow-hidden rounded-lg border border-base-300 bg-base-100 shadow-xs"
-                                                  >
+                                                {selectedPhotos.map((photo) => (
+                                                  <div key={photo.fileName} className="group relative aspect-[4/3] overflow-hidden rounded-lg border border-base-300 bg-base-100 shadow-xs">
+                                                    <a href={photo.url} target="_blank" rel="noreferrer" className="block w-full h-full">
                                                     <img
-                                                      src={photo}
-                                                      alt={`Booking set preview ${idx + 1}`}
+                                                      src={photo.url}
+                                                      alt={`Booking set preview for ${photo.fileName}`}
                                                       className="h-full w-full object-cover transition-transform group-hover:scale-105"
                                                     />
                                                   </a>
+                                                    {canEditBooking(booking) && (
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => handleDeleteSetPhoto(booking.BookingID, selectedSet.SetID, photo.fileName)}
+                                                        title={`Delete photo ${photo.fileName}`}
+                                                        className="absolute top-1 right-1 btn btn-xs btn-circle btn-error opacity-0 group-hover:opacity-100 transition-opacity"
+                                                      >
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                                                      </button>
+                                                    )}
+                                                  </div>
                                                 ))}
                                               </div>
                                             ) : (

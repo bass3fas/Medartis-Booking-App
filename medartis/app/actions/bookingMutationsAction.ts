@@ -1,8 +1,9 @@
 'use server';
 
 import crypto from 'crypto';
+import { google } from 'googleapis';
 import { z } from 'zod';
-import { uploadPhotoToDrive } from '../lib/googleDrive';
+import { uploadPhotoToDrive, deletePhotoFromDrive } from '../lib/googleDrive';
 import { sheets, SPREADSHEET_ID } from '../lib/google-sheets';
 import { EnhancedBooking } from './getBookingsAction';
 
@@ -286,6 +287,86 @@ export async function addBookingSetPhotoAction(formData: FormData) {
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Could not add the set photo.';
     return { success: false, error: message };
+  }
+}
+
+export async function deleteBookingSetPhotoAction(formData: FormData) {
+  try {
+    const schema = z.object({
+      BookingID: z.string().min(1),
+      SetID: z.string().min(1),
+      photoFileName: z.string().min(1),
+    });
+
+    const validation = schema.safeParse({
+      BookingID: formData.get('BookingID'),
+      SetID: formData.get('SetID'),
+      photoFileName: formData.get('photoFileName'),
+    });
+
+    if (!validation.success) return { success: false, error: 'Booking ID, Set ID, and Photo Filename are required.' };
+
+    const { BookingID, SetID, photoFileName } = validation.data;
+    const context = { currentUserName: normalize(formData.get('currentUserName')), currentUserRole: normalize(formData.get('currentUserRole')) };
+
+    const { booking } = await findBookingRow(BookingID);
+    if (!canUpdateBooking(booking, context)) return { success: false, error: 'You do not have permission to delete set photos.' };
+
+    console.log(`Attempting to delete photo "${photoFileName}" from BookingID: ${BookingID}, SetID: ${SetID}`);
+
+    // 1. Find the booking set row and the specific photo column
+    const response = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: 'BookingSets!A1:Z' });
+    const [headers = [], ...rows] = response.data.values || [];
+    const bookingColumn = headers.indexOf('BookingID');
+    const setColumn = headers.indexOf('SetID');
+
+    const rowIndex = rows.findIndex((row) => normalize(row[bookingColumn]) === BookingID && normalize(row[setColumn]) === SetID);
+    if (rowIndex === -1) return { success: false, error: `Set ${SetID} is not linked to this booking.` };
+
+    console.log(`[SERVER] Found matching row at index: ${rowIndex}. Row data:`, rows[rowIndex]);
+    console.log(`[SERVER] Searching for photoFileName: "${photoFileName}"`);
+
+    const photoColumnIndex = rows[rowIndex].findIndex(cellValue => normalize(cellValue) === photoFileName);
+
+    if (photoColumnIndex === -1) {
+      console.error('[SERVER] Photo not found in set. The normalized cell values are:', rows[rowIndex].map(normalize));
+      return { success: false, error: 'Photo not found in this set.' };
+    }
+
+    // 2. Clear the cell in Google Sheets
+    const columnLetter = String.fromCharCode(65 + photoColumnIndex);
+    const targetRange = `BookingSets!${columnLetter}${rowIndex + 2}`;
+    await sheets.spreadsheets.values.clear({ spreadsheetId: SPREADSHEET_ID, range: targetRange });
+
+    // 3. Find the file in Google Drive by its name to get the ID
+    const actualFileName = photoFileName.split('/').pop();
+    if (actualFileName) {
+      console.log(`Searching for file "${actualFileName}" in Google Drive to delete...`);
+      const driveAuth = new google.auth.JWT({
+        email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+        key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+        scopes: ['https://www.googleapis.com/auth/drive'],
+      });
+      const drive = google.drive({ version: 'v3', auth: driveAuth });
+      const searchResponse = await drive.files.list({
+        q: `name='${actualFileName}'`,
+        fields: 'files(id, name)',
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true,
+      });
+
+      if (searchResponse.data.files && searchResponse.data.files.length > 0 && searchResponse.data.files[0].id) {
+        const fileId = searchResponse.data.files[0].id;
+        console.log(`File found with ID: ${fileId}. Deleting from Google Drive...`);
+        await deletePhotoFromDrive(fileId);
+      } else {
+        console.warn(`Could not find file "${actualFileName}" in Google Drive to delete.`);
+      }
+    }
+
+    return { success: true, message: 'Set photo deleted.' };
+  } catch (error: unknown) {
+    return { success: false, error: error instanceof Error ? error.message : 'Could not delete the set photo.' };
   }
 }
 
