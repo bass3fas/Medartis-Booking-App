@@ -1,15 +1,13 @@
 // app/usages/page.tsx
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useTransition } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { fetchUsageLog } from '../actions/getUsagesAction';
 import { EnrichedUsage, PatientMRNGroup } from '../types/interfaces';
-
-interface UsageListItem extends EnrichedUsage {
-  [key: string]: unknown;
-}
+import EditUsageModal from '../components/EditUsageModal';
+import { deleteUsageAction } from '../actions/usageMutationsAction';
 
 export default function GroupedUsageLogPage() {
   const searchParams = useSearchParams();
@@ -22,6 +20,19 @@ export default function GroupedUsageLogPage() {
   const [hospitalFilter, setHospitalFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'Refilled' | 'Pending to Refill'>('all'); // 🔄 Restored
   const [expandedCaseKey, setExpandedCaseKey] = useState<string | null>(null);
+  const [editingUsage, setEditingUsage] = useState<EnrichedUsage | null>(null);
+  const [currentUserRole, setCurrentUserRole] = useState('');
+  const [isDeleting, startDeleteTransition] = useTransition();
+
+  const canManageUsage = ['admin', 'warehouse'].includes(currentUserRole.trim().toLowerCase());
+
+  const syncLedger = useCallback(async () => {
+    setLoading(true);
+    const res = await fetchUsageLog();
+    if (res.success) setCases(res.data);
+    else setErrorMessage(res.error || 'Failed to populate case group logs.');
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
     const mrn = searchParams.get('mrn');
@@ -32,18 +43,24 @@ export default function GroupedUsageLogPage() {
   }, [searchParams]);
 
   useEffect(() => {
-    async function syncLedger() {
-      setLoading(true);
-      const res = await fetchUsageLog();
-      if (res.success) {
-        setCases(res.data);
-      } else {
-        setErrorMessage(res.error || 'Failed to populate case group logs.');
-      }
-      setLoading(false);
-    }
     syncLedger();
-  }, []);
+    try {
+      const session = JSON.parse(localStorage.getItem('medartis_session_token') || '{}');
+      setCurrentUserRole(session.role || '');
+    } catch { setCurrentUserRole(''); }
+  }, [syncLedger]);
+
+  const deleteUsage = (usageId: string) => {
+    if (!window.confirm('Delete this usage entry? This cannot be undone.')) return;
+    startDeleteTransition(async () => {
+      const formData = new FormData();
+      formData.set('UsageID', usageId);
+      formData.set('currentUserRole', currentUserRole);
+      const result = await deleteUsageAction(formData);
+      if (result.success) await syncLedger();
+      else setErrorMessage(result.error || 'Could not delete usage.');
+    });
+  };
 
   const uniqueHospitals = Array.from(new Set(cases.map(c => c.Hospital).filter(Boolean))).sort();
 
@@ -52,12 +69,12 @@ export default function GroupedUsageLogPage() {
     const matchesSearch = 
       c.PatientMRN.toLowerCase().includes(searchQuery.toLowerCase()) ||
       c.BookingID.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.items.some((item: UsageListItem) => (item.PartNumber || '').toLowerCase().includes(searchQuery.toLowerCase()));
+      c.items.some((item: EnrichedUsage) => (item.PartNumber || '').toLowerCase().includes(searchQuery.toLowerCase()));
 
     const matchesHospital = hospitalFilter === 'all' || c.Hospital === hospitalFilter;
 
     // 🔄 Evaluate structural status flags for the group container
-    const hasPendingItems = c.items.some((item: UsageListItem) => item.computedUsageStatus === 'Pending to Refill');
+    const hasPendingItems = c.items.some((item: EnrichedUsage) => item.computedUsageStatus === 'Pending to Refill');
     const matchesStatus = 
       statusFilter === 'all' || 
       (statusFilter === 'Pending to Refill' && hasPendingItems) || 
@@ -127,7 +144,7 @@ export default function GroupedUsageLogPage() {
           {filteredCases.map((caseGroup) => {
             const caseKey = caseGroup.groupKey;
             const isExpanded = expandedCaseKey === caseKey;
-            const pendingItemsCount = caseGroup.items.filter((i: UsageListItem) => i.computedUsageStatus === 'Pending to Refill').length;
+            const pendingItemsCount = caseGroup.items.filter((i: EnrichedUsage) => i.computedUsageStatus === 'Pending to Refill').length;
 
             return (
               <div 
@@ -146,7 +163,7 @@ export default function GroupedUsageLogPage() {
                       <span className="text-sm font-black font-mono text-primary bg-primary/5 px-2 py-0.5 rounded border border-primary/10">
                         {caseGroup.PatientMRN}
                       </span>
-                      <span className="text-xs font-mono opacity-50 font-semibold">Booking: {caseGroup.BookingID}</span>
+                      <Link href={`/bookings?bookingId=${encodeURIComponent(caseGroup.BookingID)}`} onClick={(event) => event.stopPropagation()} className="text-xs font-mono font-semibold text-primary hover:underline">Booking: {caseGroup.BookingID}</Link>
                     </div>
                     <p className="text-xs font-sans font-bold text-base-content/80 tracking-tight">
                       {caseGroup.Hospital} <span className="opacity-40 mx-1">|</span> <span className="font-mono opacity-60 text-[11px]">{caseGroup.Date}</span>
@@ -185,10 +202,11 @@ export default function GroupedUsageLogPage() {
                               <th className="text-right">Used</th>
                               <th className="text-right">Refilled</th>
                               <th className="text-right">Status</th>
+                              {canManageUsage && <th className="text-right">Actions</th>}
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-base-100">
-                            {caseGroup.items.map((item: UsageListItem) => (
+                            {caseGroup.items.map((item: EnrichedUsage) => (
                               <tr key={item.UsageID} className="hover:bg-base-50/50">
                                 <td className="p-2.5">
                                   <Link href={`/partsmaster?partNumber=${encodeURIComponent(item.PartNumber || '')}`} className="font-bold text-primary hover:underline block select-all">
@@ -206,6 +224,7 @@ export default function GroupedUsageLogPage() {
                                     {item.computedUsageStatus}
                                   </span>
                                 </td>
+                                {canManageUsage && <td className="text-right whitespace-nowrap"><button type="button" onClick={() => setEditingUsage(item)} className="btn btn-ghost btn-xs text-primary">Edit</button><button type="button" onClick={() => deleteUsage(item.UsageID)} disabled={isDeleting} className="btn btn-ghost btn-xs text-error">Delete</button></td>}
                               </tr>
                             ))}
                           </tbody>
@@ -256,6 +275,7 @@ export default function GroupedUsageLogPage() {
           })}
         </div>
       )}
+      <EditUsageModal usage={editingUsage} currentUserRole={currentUserRole} onClose={() => setEditingUsage(null)} onSuccess={syncLedger} />
     </div>
   );
 }

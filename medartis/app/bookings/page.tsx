@@ -3,6 +3,7 @@
 
 import { useState, useEffect, Fragment } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { fetchBookingsLog, EnhancedBooking } from '../actions/getBookingsAction';
 import AddBookingModal from '../components/AddBookingModal';
 import EditBookingModal from '../components/EditBookingModal';
@@ -15,6 +16,7 @@ import { buildAppSheetImageUrl } from '../lib/appsheet-image-url';
 import type { BookingSet } from '../types/interfaces';
 
 export default function BookingsDashboardPage() {
+  const searchParams = useSearchParams();
   const [bookings, setBookings] = useState<EnhancedBooking[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
@@ -91,6 +93,17 @@ export default function BookingsDashboardPage() {
   useEffect(() => {
     initPage();
   }, []);
+
+  useEffect(() => {
+    const bookingId = searchParams.get('bookingId')?.trim();
+    if (!bookingId) return;
+    setSearchQuery(bookingId);
+    const booking = bookings.find((item) => item.BookingID === bookingId);
+    if (!booking) return;
+    setExpandedBookingId(booking.BookingID);
+    if (booking.PatientUsages.length > 0) setSelectedMRNTabs((current) => ({ ...current, [booking.BookingID]: current[booking.BookingID] || booking.PatientUsages[0].MRN }));
+    if (booking.RelatedBookingSets.length > 0) setSelectedSetTabs((current) => ({ ...current, [booking.BookingID]: current[booking.BookingID] || booking.RelatedBookingSets[0].SetID }));
+  }, [searchParams, bookings]);
 
   const uniqueHospitals = Array.from(new Set(bookings.map(b => b.Hospital).filter(Boolean))).sort();
   const uniqueSalesPeople = Array.from(new Set(bookings.map(b => b.Salesperson).filter(Boolean))).sort();
