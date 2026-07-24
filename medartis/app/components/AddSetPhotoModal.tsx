@@ -20,6 +20,7 @@ export default function AddSetPhotoModal({ bookingId, setId, currentUserName, cu
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError('');
+
     const formData = new FormData(event.currentTarget);
     formData.set('BookingID', bookingId);
     formData.set('SetID', setId);
@@ -40,7 +41,13 @@ export default function AddSetPhotoModal({ bookingId, setId, currentUserName, cu
       </div>
       <div className="space-y-4 p-6">
         {error && <div className="alert alert-error text-xs"><span>{error}</span></div>}
-        <label className="form-control"><span className="label-text mb-1 text-xs font-bold">Photo link</span><input required type="url" name="PhotoURL" className="input input-bordered" placeholder="https://…" /><span className="label-text-alt mt-2 text-base-content/55">Paste the link to an uploaded set photo. It will use the next available photo slot.</span></label>
+        <label className="form-control">
+          <span className="label-text mb-1 text-xs font-bold">Photo File</span>
+          <input required type="file" name="photo" accept="image/*" className="file-input file-input-bordered w-full" />
+          <span className="label-text-alt mt-2 text-base-content/55">
+            Select an image to upload. It will be added to the Google Drive folder and linked to this set.
+          </span>
+        </label>
       </div>
       <div className="flex justify-end gap-2 border-t border-base-200 bg-base-50 px-6 py-4"><button type="button" onClick={onClose} className="btn btn-ghost btn-sm" disabled={isPending}>Cancel</button><button className="btn btn-primary btn-sm px-5" disabled={isPending}>{isPending ? <span className="loading loading-spinner loading-xs" /> : 'Add photo'}</button></div>
     </form>

@@ -1,6 +1,8 @@
 'use server';
 
 import crypto from 'crypto';
+import { z } from 'zod';
+import { uploadPhotoToDrive } from '../lib/googleDrive';
 import { sheets, SPREADSHEET_ID } from '../lib/google-sheets';
 import { EnhancedBooking } from './getBookingsAction';
 
@@ -210,36 +212,76 @@ export async function updateBookingAction(formData: FormData) {
 
 export async function addBookingSetPhotoAction(formData: FormData) {
   try {
-    const bookingId = normalize(formData.get('BookingID'));
-    const setId = normalize(formData.get('SetID'));
-    const photoUrl = normalize(formData.get('PhotoURL'));
-    const context = { currentUserName: normalize(formData.get('currentUserName')), currentUserRole: normalize(formData.get('currentUserRole')) };
-    if (!bookingId || !setId || !photoUrl) return { success: false, error: 'Booking, set, and photo link are required.' };
+    const photoSchema = z.object({
+      BookingID: z.string().min(1, 'Booking ID is required.'),
+      SetID: z.string().min(1, 'Set ID is required.'),
+      photo: z.instanceof(File, { message: 'A photo file is required.' })
+        .refine((file) => file.size > 0, 'Photo file cannot be empty.')
+    });
 
-    const { booking } = await findBookingRow(bookingId);
+    const validation = photoSchema.safeParse({
+      BookingID: formData.get('BookingID'),
+      SetID: formData.get('SetID'),
+      photo: formData.get('photo'),
+    });
+
+    if (!validation.success) {
+      return { success: false, error: validation.error.errors.map(e => e.message).join(', ') };
+    }
+
+    const { BookingID, SetID, photo } = validation.data;
+    const context = { currentUserName: normalize(formData.get('currentUserName')), currentUserRole: normalize(formData.get('currentUserRole')) };
+
+    console.log(`Attempting to add photo for BookingID: ${BookingID}, SetID: ${SetID}`);
+
+    const { booking } = await findBookingRow(BookingID);
     if (!canUpdateBooking(booking, context)) return { success: false, error: 'You do not have permission to add set photos.' };
 
+    // 1. Upload the file to Google Drive
+    const parentFolderId = '1ZxOQywT75TFdSrYcSQqzNG8CgLD8bcuE'; // User provided folder ID
+    const fileExtension = photo.name.split('.').pop() || 'jpg';
+    const timestamp = Date.now();
+    // Format filename to match AppSheet's convention: BookingSetID.photoX.timestamp.extension
+    const driveFileName = `BS-${BookingID.split('-')[1] || BookingID}.${SetID}.${timestamp}.${fileExtension}`;
+
+    console.log(`Uploading file "${driveFileName}" to Google Drive folder "${parentFolderId}"...`);
+    const driveResponse = await uploadPhotoToDrive(photo, driveFileName, parentFolderId);
+    console.log('Google Drive upload response:', driveResponse);
+
+    if (!driveResponse.name) {
+      throw new Error('File upload to Google Drive failed: No file name returned.');
+    }
+
+    const uploadedAppSheetPath = `BookingSets_Images/${driveResponse.name}`;
+    console.log(`File uploaded. AppSheet path: ${uploadedAppSheetPath}`);
+
+    // 2. Find the booking set row and the next available photo column in the Google Sheet
     const response = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: 'BookingSets!A1:Z' });
     const [headers = [], ...rows] = response.data.values || [];
     const bookingColumn = headers.indexOf('BookingID');
     const setColumn = headers.indexOf('SetID');
-    const photoColumns = ['Photo1', 'Photo2', 'Photo3', 'Photo4', 'Photo5', 'Photo6', 'Photo7']
+    const photoColumns = ['photo1', 'photo2', 'photo3', 'photo4', 'photo5', 'photo6', 'photo7']
       .map((header) => ({ header, index: headers.indexOf(header) }))
-      .filter((column) => column.index !== -1);
+      .filter((column) => column.index !== -1); // Ensure photo columns exist
     if (bookingColumn === -1 || setColumn === -1 || photoColumns.length === 0) throw new Error('BookingSets must include BookingID, SetID, and at least one Photo column.');
 
-    const rowIndex = rows.findIndex((row) => normalize(row[bookingColumn]) === bookingId && normalize(row[setColumn]) === setId);
+    const rowIndex = rows.findIndex((row) => normalize(row[bookingColumn]) === BookingID && normalize(row[setColumn]) === SetID);
     if (rowIndex === -1) return { success: false, error: `Set ${setId} is not linked to this booking.` };
     const targetColumn = photoColumns.find((column) => !normalize(rows[rowIndex][column.index]));
     if (!targetColumn) return { success: false, error: 'All seven photo slots are already in use for this set.' };
 
     const columnLetter = String.fromCharCode(65 + targetColumn.index);
+    const targetRange = `BookingSets!${columnLetter}${rowIndex + 2}`; // +2 because Sheets are 1-indexed and header is row 1
+    console.log(`Updating sheet cell ${targetRange} with photo path: ${uploadedAppSheetPath}`);
+
     await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
-      range: `BookingSets!${columnLetter}${rowIndex + 2}`,
+      range: targetRange,
       valueInputOption: 'USER_ENTERED',
-      requestBody: { values: [[photoUrl]] },
+      requestBody: { values: [[uploadedAppSheetPath]] },
     });
+    console.log('Sheet updated successfully.');
+
     return { success: true, message: 'Set photo added.' };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Could not add the set photo.';

@@ -39,7 +39,7 @@ export default function BookingsDashboardPage() {
     isOpen: false, booking: null, initialSetId: undefined
   });
   const [setPhotoTarget, setSetPhotoTarget] = useState<{ bookingId: string; setId: string } | null>(null);
-
+  
   const [availableSets, setAvailableSets] = useState<VirtualSet[]>([]);
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -580,7 +580,7 @@ export default function BookingsDashboardPage() {
                                             ) : (
                                               <p className="text-[11px] italic opacity-40 font-mono">No photos attached to this set.</p>
                                             )}
-                                            <div className="flex justify-end border-t border-base-200 pt-3">
+                                            <div className="flex justify-end border-t border-base-200 pt-3 mt-3">
                                               <button
                                                 type="button"
                                                 onClick={() => setSetPhotoTarget({ bookingId: booking.BookingID, setId: selectedSet.SetID })}
