@@ -16,7 +16,7 @@ const AddBookingSchema = z.object({
   DeliverBeforeTime: z.string().optional().default(''),
   Type: z.string().optional().default('Standard'),
   SpecialRequest: z.string().optional().default(''),
-  RequestedSets: z.string().optional().default(''),
+  'Requested Sets': z.string().optional().default(''),
 });
 
 // Helper function to generate a short, random alphanumeric string for Booking ID (e.g., B-a1B2)
@@ -70,7 +70,7 @@ export async function addBookingAction(formData: FormData) {
       deliverBefore,            // 6: Deliver Before
       data.SpecialRequest,      // 7: Special Request
       'Pending',                // 8: Status (Defaults on entry creation)
-      data.RequestedSets,       // 9: Requested Sets
+      data['Requested Sets'],   // 9: Requested Sets
       '',                       // 10: Selected Sets (Blank initially)
       new Date().toISOString(), // 11: Last Updated (Timestamp snapshot)
       '',                       // 12: Driver
