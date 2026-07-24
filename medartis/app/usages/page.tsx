@@ -5,9 +5,13 @@ import { useState, useEffect, useCallback, useTransition } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { fetchUsageLog } from '../actions/getUsagesAction';
+import { fetchBookingsLog, type EnhancedBooking } from '../actions/getBookingsAction';
+import { fetchEnrichedSets, type VirtualSet } from '../actions/getSetsAction';
 import { EnrichedUsage, PatientMRNGroup } from '../types/interfaces';
 import EditUsageModal from '../components/EditUsageModal';
-import { deleteUsageAction } from '../actions/usageMutationsAction';
+import AddUsageModal from '../components/AddUsageModal';
+import SelectBookingForUsageModal from '../components/SelectBookingForUsageModal';
+import { deleteUsageAction, refillUsageAction } from '../actions/usageMutationsAction';
 
 export default function GroupedUsageLogPage() {
   const searchParams = useSearchParams();
@@ -23,6 +27,10 @@ export default function GroupedUsageLogPage() {
   const [editingUsage, setEditingUsage] = useState<EnrichedUsage | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState('');
   const [isDeleting, startDeleteTransition] = useTransition();
+  const [bookings, setBookings] = useState<EnhancedBooking[]>([]);
+  const [availableSets, setAvailableSets] = useState<VirtualSet[]>([]);
+  const [isBookingPickerOpen, setIsBookingPickerOpen] = useState(false);
+  const [usageBooking, setUsageBooking] = useState<EnhancedBooking | null>(null);
 
   const canManageUsage = ['admin', 'warehouse'].includes(currentUserRole.trim().toLowerCase());
 
@@ -44,6 +52,8 @@ export default function GroupedUsageLogPage() {
 
   useEffect(() => {
     syncLedger();
+    fetchBookingsLog().then((result) => { if (result.success) setBookings(result.data); });
+    fetchEnrichedSets().then((result) => { if (result.success) setAvailableSets(result.data); });
     try {
       const session = JSON.parse(localStorage.getItem('medartis_session_token') || '{}');
       setCurrentUserRole(session.role || '');
@@ -59,6 +69,19 @@ export default function GroupedUsageLogPage() {
       const result = await deleteUsageAction(formData);
       if (result.success) await syncLedger();
       else setErrorMessage(result.error || 'Could not delete usage.');
+    });
+  };
+
+  const refillUsage = (usageIds: string[]) => {
+    const message = usageIds.length === 1 ? 'Mark this usage line as fully refilled?' : `Mark all ${usageIds.length} usage lines for this MRN as fully refilled?`;
+    if (!window.confirm(message)) return;
+    startDeleteTransition(async () => {
+      const formData = new FormData();
+      formData.set('UsageIDs', JSON.stringify(usageIds));
+      formData.set('currentUserRole', currentUserRole);
+      const result = await refillUsageAction(formData);
+      if (result.success) await syncLedger();
+      else setErrorMessage(result.error || 'Could not refill usage.');
     });
   };
 
@@ -87,9 +110,9 @@ export default function GroupedUsageLogPage() {
     <div className="w-full p-2 font-sans">
       
       {/* Upper Brand Badge */}
-      <div className="mb-6 pb-2 border-b border-base-300">
-        <h1 className="text-xl font-black tracking-tight text-base-content">Surgical Cases & Usages</h1>
-        <p className="text-xs font-mono opacity-50 mt-0.5">Aggregated metrics grouped by Patient MRN and clinical confirmation images</p>
+      <div className="mb-6 flex items-center justify-between gap-4 border-b border-base-300 pb-3">
+        <div><h1 className="text-xl font-black tracking-tight text-base-content">Surgical Cases & Usages</h1><p className="text-xs font-mono opacity-50 mt-0.5">Aggregated metrics grouped by Patient MRN and clinical confirmation images</p></div>
+        <button type="button" onClick={() => setIsBookingPickerOpen(true)} className="btn btn-primary btn-sm">+ Add Usage</button>
       </div>
 
       {errorMessage && (
@@ -193,7 +216,7 @@ export default function GroupedUsageLogPage() {
                     
                     {/* LEFT PANEL: Consumption Table Ledger Rows */}
                     <div className="lg:col-span-7 space-y-2">
-                      <p className="text-[10px] font-mono uppercase font-black opacity-40 tracking-wider">Consumed Implant Element Specifications</p>
+                      <div className="flex items-center justify-between gap-3"><p className="text-[10px] font-mono uppercase font-black opacity-40 tracking-wider">Consumed Implant Element Specifications</p>{canManageUsage && <button type="button" onClick={() => refillUsage(cases.filter((group) => group.PatientMRN === caseGroup.PatientMRN).flatMap((group) => group.items).filter((item) => item.computedUsageStatus !== 'Refilled').map((item) => item.UsageID))} disabled={isDeleting || !cases.some((group) => group.PatientMRN === caseGroup.PatientMRN && group.items.some((item) => item.computedUsageStatus !== 'Refilled'))} className="btn btn-outline btn-success btn-xs">Refill all MRN</button>}</div>
                       <div className="border border-base-300 rounded-xl overflow-hidden bg-base-100 max-h-72 overflow-y-auto shadow-sm">
                         <table className="table table-compact w-full text-xs font-mono">
                           <thead className="bg-base-100 border-b opacity-60 text-[10px] uppercase font-black">
@@ -224,7 +247,7 @@ export default function GroupedUsageLogPage() {
                                     {item.computedUsageStatus}
                                   </span>
                                 </td>
-                                {canManageUsage && <td className="text-right whitespace-nowrap"><button type="button" onClick={() => setEditingUsage(item)} className="btn btn-ghost btn-xs text-primary">Edit</button><button type="button" onClick={() => deleteUsage(item.UsageID)} disabled={isDeleting} className="btn btn-ghost btn-xs text-error">Delete</button></td>}
+                                {canManageUsage && <td className="text-right whitespace-nowrap"><button type="button" onClick={() => refillUsage([item.UsageID])} disabled={isDeleting || item.computedUsageStatus === 'Refilled'} className="btn btn-ghost btn-xs text-success">Refill</button><button type="button" onClick={() => setEditingUsage(item)} className="btn btn-ghost btn-xs text-primary">Edit</button><button type="button" onClick={() => deleteUsage(item.UsageID)} disabled={isDeleting} className="btn btn-ghost btn-xs text-error">Delete</button></td>}
                               </tr>
                             ))}
                           </tbody>
@@ -275,7 +298,9 @@ export default function GroupedUsageLogPage() {
           })}
         </div>
       )}
-      <EditUsageModal usage={editingUsage} currentUserRole={currentUserRole} onClose={() => setEditingUsage(null)} onSuccess={syncLedger} />
+      <EditUsageModal usage={editingUsage} booking={bookings.find((booking) => booking.BookingID === editingUsage?.BookingID) || null} currentUserRole={currentUserRole} onClose={() => setEditingUsage(null)} onSuccess={syncLedger} />
+      {isBookingPickerOpen && <SelectBookingForUsageModal bookings={bookings} onClose={() => setIsBookingPickerOpen(false)} onSelect={(booking) => { setUsageBooking(booking); setIsBookingPickerOpen(false); }} />}
+      <AddUsageModal isOpen={Boolean(usageBooking)} booking={usageBooking} availableSets={availableSets} onClose={() => setUsageBooking(null)} onSuccess={syncLedger} />
     </div>
   );
 }

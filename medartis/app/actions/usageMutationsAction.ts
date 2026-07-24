@@ -50,3 +50,31 @@ export async function deleteUsageAction(formData: FormData) {
     return { success: false, error: error instanceof Error ? error.message : 'Could not delete usage.' };
   }
 }
+
+export async function refillUsageAction(formData: FormData) {
+  try {
+    if (!canManageUsage(text(formData.get('currentUserRole')))) return { success: false, error: 'Only Admin and Warehouse users can refill usage.' };
+    const usageIds = JSON.parse(text(formData.get('UsageIDs')) || '[]') as string[];
+    if (!Array.isArray(usageIds) || usageIds.length === 0) return { success: false, error: 'No usage entries were selected.' };
+    if (!SPREADSHEET_ID) throw new Error('GOOGLE_SPREADSHEET_ID environment variable is missing or undefined.');
+    const response = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: 'Usage!A1:S' });
+    const [headers = [], ...rows] = response.data.values || [];
+    const usageIdColumn = headers.indexOf('UsageID');
+    const usedColumn = headers.indexOf('QtyUsed');
+    const refilledColumn = headers.indexOf('Qty Refilled');
+    const statusColumn = headers.indexOf('Usage Status');
+    const updatedColumn = headers.indexOf('Last Update');
+    if (usageIdColumn === -1 || usedColumn === -1 || refilledColumn === -1) throw new Error('Usage sheet is missing refill columns.');
+    const values = rows.map((row, index) => ({ row, rowNumber: index + 2 })).filter(({ row }) => usageIds.includes(String(row[usageIdColumn] ?? '').trim())).map(({ row, rowNumber }) => {
+      const nextRow = headers.map((_, index) => row[index] ?? '');
+      nextRow[refilledColumn] = nextRow[usedColumn] ?? '0';
+      if (statusColumn !== -1) nextRow[statusColumn] = 'Refilled';
+      if (updatedColumn !== -1) nextRow[updatedColumn] = new Date().toISOString();
+      return { range: `Usage!A${rowNumber}:S${rowNumber}`, values: [nextRow.slice(0, 19)] };
+    });
+    await Promise.all(values.map(({ range, values }) => sheets.spreadsheets.values.update({ spreadsheetId: SPREADSHEET_ID, range, valueInputOption: 'USER_ENTERED', requestBody: { values } })));
+    return { success: true, message: `${values.length} usage entr${values.length === 1 ? 'y' : 'ies'} refilled.` };
+  } catch (error: unknown) {
+    return { success: false, error: error instanceof Error ? error.message : 'Could not refill usage.' };
+  }
+}
