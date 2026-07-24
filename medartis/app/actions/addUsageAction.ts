@@ -76,9 +76,23 @@ export async function addBookingUsageAction(formData: FormData) {
       return { success: false, error: 'No valid usage items to save. Ensure at least one part has a quantity used greater than zero.' };
     }
 
-    await sheets.spreadsheets.values.append({
+    // Do not use values.append here. Sheets can infer the wrong table when there
+    // are gaps or neighbouring values, which causes usage rows to be written away
+    // from column A. Find the next row ourselves and write the full A:S range.
+    const existingUsageRows = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: 'Usage!A1:S',
+    });
+    const usageRows = existingUsageRows.data.values || [];
+    const lastUsedOffset = usageRows.reduce(
+      (lastOffset, row, offset) => (row.some((value) => String(value ?? '').trim() !== '') ? offset : lastOffset),
+      -1,
+    );
+    const targetRow = Math.max(2, lastUsedOffset + 2);
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `Usage!A${targetRow}:S${targetRow + rows.length - 1}`,
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: rows },
     });
