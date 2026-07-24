@@ -1,17 +1,17 @@
 'use client';
 
-import { useState, useTransition, useMemo, Fragment, useEffect } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
 import { addBookingUsageAction } from '../actions/addUsageAction';
-import type { EditableBooking } from '../actions/bookingMutationsAction';
-import type { EnrichedTray, VirtualSet } from '../actions/getSetsAction';
+import type { EnhancedBooking } from '../actions/getBookingsAction';
+import { fetchTraysAndUsageForSet, type EnrichedTray, type VirtualSet } from '../actions/getSetsAction';
 
 interface AddUsageModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
-  booking: EditableBooking | null;
-  set: VirtualSet | null;
-  trays: EnrichedTray[];
+  booking: EnhancedBooking | null;
+  availableSets: VirtualSet[];
+  initialSetId?: string;
 }
 
 interface UsageItem {
@@ -24,185 +24,125 @@ interface UsageItem {
   qtyRefilled: number;
 }
 
-export default function AddUsageModal({ isOpen, onClose, onSuccess, booking, set, trays }: AddUsageModalProps) {
+const splitCommaValue = (value?: string) => (value || '').split(',').map((value) => value.trim()).filter(Boolean);
+
+export default function AddUsageModal({ isOpen, onClose, onSuccess, booking, availableSets, initialSetId }: AddUsageModalProps) {
   const [isPending, startTransition] = useTransition();
+  const [isLoadingSet, setIsLoadingSet] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [usageItems, setUsageItems] = useState<UsageItem[]>([]);
   const [nextId, setNextId] = useState(1);
+  const [selectedSetId, setSelectedSetId] = useState('');
+  const [trays, setTrays] = useState<EnrichedTray[]>([]);
+  const [selectedMrn, setSelectedMrn] = useState('');
+  const [newMrn, setNewMrn] = useState('');
 
-  const patientMRNOptions = useMemo(() => {
-    return (booking?.['Patient MRN'] || '').split(',').map(mrn => mrn.trim()).filter(Boolean);
-  }, [booking]);
+  const patientMRNOptions = useMemo(() => Array.from(new Set([
+    ...splitCommaValue(booking?.['Patient MRN']),
+    ...(booking?.PatientUsages.map((usage) => usage.MRN).filter(Boolean) || []),
+  ])), [booking]);
+  const setOptions = useMemo(() => Array.from(new Set([
+    ...(booking?.RelatedBookingSets.map((set) => set.SetID).filter(Boolean) || []),
+  ])).map((setId) => availableSets.find((set) => set.SetID === setId)).filter((set): set is VirtualSet => Boolean(set)), [booking, availableSets]);
 
   useEffect(() => {
-    if (isOpen) {
-      // Reset state when modal opens
-      setUsageItems([]);
-      setError(null);
+    if (!isOpen) return;
+    const defaultSetId = initialSetId || setOptions[0]?.SetID || '';
+    setSelectedSetId(defaultSetId);
+    setSelectedMrn(patientMRNOptions[0] || '');
+    setNewMrn('');
+    setUsageItems([]);
+    setNextId(1);
+    setError(null);
+  }, [isOpen, initialSetId, patientMRNOptions, setOptions]);
+
+  useEffect(() => {
+    if (!isOpen || !selectedSetId) {
+      setTrays([]);
+      return;
     }
-  }, [isOpen]);
+    let cancelled = false;
+    setIsLoadingSet(true);
+    setTrays([]);
+    setUsageItems([]);
+    fetchTraysAndUsageForSet(selectedSetId).then((result) => {
+      if (cancelled) return;
+      if (result.success) setTrays(result.trays);
+      else setError(result.error || 'Could not load trays for the selected set.');
+      setIsLoadingSet(false);
+    });
+    return () => { cancelled = true; };
+  }, [isOpen, selectedSetId]);
 
   const handleAddItem = () => {
-    setUsageItems(prev => [...prev, { id: nextId, trayId: '', partNumber: '', itemId: '', description: '', qtyUsed: 1, qtyRefilled: 0 }]);
-    setNextId(prev => prev + 1);
-  };
-
-  const handleRemoveItem = (id: number) => {
-    setUsageItems(prev => prev.filter(item => item.id !== id));
+    setUsageItems((items) => [...items, { id: nextId, trayId: '', partNumber: '', itemId: '', description: '', qtyUsed: 1, qtyRefilled: 0 }]);
+    setNextId((id) => id + 1);
   };
 
   const handleItemChange = (id: number, field: keyof UsageItem, value: string | number) => {
-    setUsageItems(prev => prev.map(item => {
-      if (item.id === id) {
-        const updatedItem = { ...item, [field]: value };
-        if (field === 'trayId') {
-          // Reset part number when tray changes
-          updatedItem.partNumber = '';
-          updatedItem.itemId = '';
-          updatedItem.description = '';
-        }
-        if (field === 'partNumber') {
-          const selectedTray = trays.find(t => t.TrayID === item.trayId);
-          const selectedPart = selectedTray?.contents.find(c => c.PartNumber === value);
-          if (selectedPart) {
-            updatedItem.itemId = selectedPart.ItemID;
-            updatedItem.description = selectedPart.Description || '';
-          }
-        }
-        return updatedItem;
+    setUsageItems((items) => items.map((item) => {
+      if (item.id !== id) return item;
+      const updated = { ...item, [field]: value };
+      if (field === 'trayId') Object.assign(updated, { partNumber: '', itemId: '', description: '' });
+      if (field === 'partNumber') {
+        const part = trays.find((tray) => tray.TrayID === updated.trayId)?.contents.find((content) => content.PartNumber === value);
+        if (part) Object.assign(updated, { itemId: part.ItemID, description: part.Description || '' });
       }
-      return item;
+      return updated;
     }));
   };
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setError(null);
-
-    if (!booking || !set) {
-      setError('Booking or Set information is missing.');
-      return;
-    }
-
-    if (usageItems.some(item => !item.trayId || !item.partNumber || item.qtyUsed <= 0)) {
-      setError('Please fill all fields for each usage item and ensure quantity used is greater than 0.');
-      return;
-    }
-
-    const formData = new FormData(e.currentTarget);
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const patientMRN = newMrn.trim() || selectedMrn;
+    if (!booking || !selectedSetId || !patientMRN) return setError('Choose a set and enter or select a patient MRN.');
+    if (!usageItems.length || usageItems.some((item) => !item.trayId || !item.partNumber || item.qtyUsed <= 0)) return setError('Add at least one complete part-number entry.');
+    const formData = new FormData(event.currentTarget);
     formData.set('BookingID', booking.BookingID);
-    formData.set('SetID', set.SetID);
+    formData.set('SetID', selectedSetId);
+    formData.set('PatientMRN', patientMRN);
     formData.set('Hospital', booking.Hospital || '');
-
-    // Clear and append structured usage items
-    formData.delete('usage_items');
-    formData.append('usage_items', JSON.stringify(usageItems));
-
+    formData.set('usage_items', JSON.stringify(usageItems));
     startTransition(async () => {
       const result = await addBookingUsageAction(formData);
-      if (result.success) {
-        onSuccess();
-        onClose();
-      } else {
-        setError(result.error || 'An unknown error occurred.');
-      }
+      if (result.success) { onSuccess(); onClose(); }
+      else setError(result.error || 'Unable to save usage.');
     });
   };
 
-  if (!isOpen || !booking || !set) return null;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in">
-      <div className="w-full max-w-4xl rounded-[30px] border border-base-300 bg-base-100 shadow-2xl">
-        <form onSubmit={handleSubmit}>
-          <div className="border-b border-base-200 bg-gradient-to-r from-base-100 to-base-200/70 px-6 py-5">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <div className="badge badge-secondary badge-outline font-mono uppercase tracking-widest">Add Usage</div>
-                <h2 className="mt-3 text-xl font-black tracking-tight text-base-content">For Booking {booking.BookingID}</h2>
-                <p className="mt-1 text-sm text-base-content/70">Log parts used from set <span className="font-bold">{set.SetID}</span>.</p>
-              </div>
-              <button type="button" onClick={onClose} className="btn btn-ghost btn-sm rounded-full" aria-label="Close dialog">✕</button>
+  if (!isOpen || !booking) return null;
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
+    <div className="w-full max-w-5xl overflow-hidden rounded-2xl border border-base-300 bg-base-100 shadow-2xl">
+      <form onSubmit={handleSubmit}>
+        <div className="flex items-start justify-between border-b border-base-200 bg-base-100 px-7 py-6">
+          <div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">Usage entry</p><h2 className="mt-1 text-2xl font-black tracking-tight">Record case usage</h2><p className="mt-1 text-sm text-base-content/60">Booking <span className="font-mono font-semibold text-base-content">{booking.BookingID}</span></p></div>
+          <button type="button" onClick={onClose} className="btn btn-ghost btn-sm btn-circle" aria-label="Close dialog">✕</button>
+        </div>
+        <div className="max-h-[65vh] overflow-y-auto bg-base-50/50 px-7 py-6">
+          {error && <div className="alert alert-error mb-4 text-xs"><span>{error}</span></div>}
+          <section className="rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+            <div className="mb-4"><h3 className="text-sm font-black">Case details</h3><p className="text-xs text-base-content/55">Identify the patient, set, and usage sheet.</p></div>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <label className="form-control"><span className="label-text mb-1 text-xs font-bold">Patient MRN</span><select className="select select-bordered" value={selectedMrn} onChange={(event) => setSelectedMrn(event.target.value)}><option value="">Choose existing MRN</option>{patientMRNOptions.map((mrn) => <option key={mrn} value={mrn}>{mrn}</option>)}</select></label>
+              <label className="form-control"><span className="label-text mb-1 text-xs font-bold">New patient MRN</span><input className="input input-bordered" value={newMrn} onChange={(event) => setNewMrn(event.target.value)} placeholder="Add new MRN" /></label>
+              <label className="form-control"><span className="label-text mb-1 text-xs font-bold">Used set</span><select className="select select-bordered" value={selectedSetId} onChange={(event) => setSelectedSetId(event.target.value)} required><option value="">Choose set</option>{setOptions.map((set) => <option key={set.SetID} value={set.SetID}>{set.SetID}</option>)}</select></label>
+              <label className="form-control"><span className="label-text mb-1 text-xs font-bold">Usage date</span><input type="date" name="Date" className="input input-bordered" defaultValue={new Date().toISOString().slice(0, 10)} required /></label>
             </div>
-          </div>
-
-          <div className="max-h-[65vh] overflow-y-auto px-6 py-6">
-            {error && <div className="alert alert-error mb-4 text-xs font-semibold"><span>{error}</span></div>}
-            
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-              <label className="form-control">
-                <span className="label-text pb-1 text-xs font-semibold">Patient MRN</span>
-                <select name="PatientMRN" className="select select-bordered select-sm" required disabled={patientMRNOptions.length === 0}>
-                  <option value="" disabled selected={!patientMRNOptions.length}>Select MRN</option>
-                  {patientMRNOptions.map(mrn => <option key={mrn} value={mrn}>{mrn}</option>)}
-                </select>
-              </label>
-              <label className="form-control">
-                <span className="label-text pb-1 text-xs font-semibold">Usage Date</span>
-                <input type="date" name="Date" className="input input-bordered input-sm" defaultValue={new Date().toISOString().split('T')[0]} required />
-              </label>
-            </div>
-
-            <div className="divider mt-6 mb-4">Usage Items</div>
-
-            <div className="space-y-4">
-              {usageItems.map((item, index) => {
-                const selectedTray = trays.find(t => t.TrayID === item.trayId);
-                return (
-                  <div key={item.id} className="grid grid-cols-[1fr_1fr_auto_auto_auto] gap-3 rounded-xl border bg-base-50 p-3 items-end">
-                    <label className="form-control">
-                      <span className="label-text pb-1 text-xs font-semibold">Tray</span>
-                      <select value={item.trayId} onChange={(e) => handleItemChange(item.id, 'trayId', e.target.value)} className="select select-bordered select-xs" required>
-                        <option value="" disabled>Select Tray</option>
-                        {trays.map(t => <option key={t.TrayID} value={t.TrayID}>{t.TrayName} ({t.TrayID})</option>)}
-                      </select>
-                    </label>
-                    <label className="form-control">
-                      <span className="label-text pb-1 text-xs font-semibold">Part Number</span>
-                      <select value={item.partNumber} onChange={(e) => handleItemChange(item.id, 'partNumber', e.target.value)} className="select select-bordered select-xs" required disabled={!selectedTray}>
-                        <option value="" disabled>Select Part</option>
-                        {selectedTray?.contents.map(c => <option key={c.ItemID} value={c.PartNumber}>{c.PartNumber} - {c.Description}</option>)}
-                      </select>
-                    </label>
-                    <label className="form-control">
-                      <span className="label-text pb-1 text-xs font-semibold">Qty Used</span>
-                      <input type="number" value={item.qtyUsed} onChange={(e) => handleItemChange(item.id, 'qtyUsed', parseInt(e.target.value, 10))} className="input input-bordered input-xs w-20" min="1" required />
-                    </label>
-                    <label className="form-control">
-                      <span className="label-text pb-1 text-xs font-semibold">Qty Refilled</span>
-                      <input type="number" value={item.qtyRefilled} onChange={(e) => handleItemChange(item.id, 'qtyRefilled', parseInt(e.target.value, 10))} className="input input-bordered input-xs w-20" min="0" />
-                    </label>
-                    <button type="button" onClick={() => handleRemoveItem(item.id)} className="btn btn-error btn-outline btn-xs btn-square">✕</button>
-                  </div>
-                );
-              })}
-            </div>
-
-            <button type="button" onClick={handleAddItem} className="btn btn-sm btn-ghost mt-4">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-              Add Part
-            </button>
-
-            <div className="grid grid-cols-1 gap-4 mt-6">
-              <label className="form-control">
-                <span className="label-text pb-1 text-xs font-semibold">Usage Notes</span>
-                <textarea name="Notes" className="textarea textarea-bordered textarea-sm" placeholder="Optional notes about the usage..."></textarea>
-              </label>
-              <label className="form-control">
-                <span className="label-text pb-1 text-xs font-semibold">Usage Photo Link</span>
-                <input type="url" name="Photo" className="input input-bordered input-sm" placeholder="https://..." />
-              </label>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-end gap-3 border-t border-base-200 bg-base-100/90 px-6 py-4">
-            <button type="button" onClick={onClose} className="btn btn-sm btn-ghost rounded-xl font-bold" disabled={isPending}>Cancel</button>
-            <button type="submit" className="btn btn-sm btn-primary rounded-xl px-5 font-bold" disabled={isPending || usageItems.length === 0}>
-              {isPending ? <span className="loading loading-spinner loading-xs"></span> : 'Save Usages'}
-            </button>
-          </div>
-        </form>
-      </div>
+            <label className="form-control mt-4"><span className="label-text mb-1 text-xs font-bold">Usage sheet</span><input type="url" name="Photo" className="input input-bordered" placeholder="Paste an uploaded usage-sheet link (optional)" /></label>
+          </section>
+          <section className="mt-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+            <div className="flex items-center justify-between gap-3"><div><h3 className="text-sm font-black">Consumed parts</h3><p className="text-xs text-base-content/55">Select a tray, then choose each part number used.</p></div><button type="button" onClick={handleAddItem} disabled={!selectedSetId || isLoadingSet} className="btn btn-primary btn-sm">+ Add part</button></div>
+            {isLoadingSet && <div className="flex justify-center py-8"><span className="loading loading-spinner loading-md text-primary" /></div>}
+            {!isLoadingSet && !usageItems.length && <div className="mt-4 rounded-lg border border-dashed border-base-300 bg-base-50 px-4 py-8 text-center text-sm text-base-content/50">No parts added yet.</div>}
+            <div className="mt-4 space-y-3">{usageItems.map((item, index) => {
+              const tray = trays.find((candidate) => candidate.TrayID === item.trayId);
+              return <div key={item.id} className="grid gap-3 rounded-lg border border-base-200 bg-base-50 p-4 md:grid-cols-[32px_1fr_1fr_90px_90px_32px] md:items-end"><span className="hidden pb-2 text-xs font-bold text-base-content/40 md:block">{index + 1}</span><label className="form-control"><span className="label-text mb-1 text-[11px] font-bold">Tray</span><select value={item.trayId} onChange={(event) => handleItemChange(item.id, 'trayId', event.target.value)} className="select select-bordered select-sm"><option value="">Select tray</option>{trays.map((tray) => <option key={tray.TrayID} value={tray.TrayID}>{tray.TrayName} ({tray.TrayID})</option>)}</select></label><label className="form-control"><span className="label-text mb-1 text-[11px] font-bold">Part number</span><select value={item.partNumber} onChange={(event) => handleItemChange(item.id, 'partNumber', event.target.value)} className="select select-bordered select-sm" disabled={!tray}><option value="">Select part</option>{tray?.contents.map((part) => <option key={part.ItemID} value={part.PartNumber}>{part.PartNumber} — {part.Description}</option>)}</select></label><label className="form-control"><span className="label-text mb-1 text-[11px] font-bold">Used</span><input type="number" min="1" value={item.qtyUsed} onChange={(event) => handleItemChange(item.id, 'qtyUsed', Number(event.target.value))} className="input input-bordered input-sm" /></label><label className="form-control"><span className="label-text mb-1 text-[11px] font-bold">Refilled</span><input type="number" min="0" value={item.qtyRefilled} onChange={(event) => handleItemChange(item.id, 'qtyRefilled', Number(event.target.value))} className="input input-bordered input-sm" /></label><button type="button" onClick={() => setUsageItems((items) => items.filter((usage) => usage.id !== item.id))} className="btn btn-ghost btn-sm btn-square text-error" aria-label="Remove part">✕</button></div>;
+            })}</div>
+          </section>
+          <section className="mt-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm"><label className="form-control"><span className="label-text mb-1 text-xs font-bold">Usage notes</span><textarea name="Notes" className="textarea textarea-bordered min-h-20" placeholder="Optional notes for this usage entry" /></label></section>
+        </div>
+        <div className="flex items-center justify-end gap-3 border-t border-base-200 bg-base-100 px-7 py-4"><button type="button" onClick={onClose} className="btn btn-ghost" disabled={isPending}>Cancel</button><button type="submit" className="btn btn-primary px-6" disabled={isPending || isLoadingSet || !usageItems.length}>{isPending ? <span className="loading loading-spinner loading-xs" /> : 'Save usage'}</button></div>
+      </form>
     </div>
-  );
+  </div>;
 }

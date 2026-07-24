@@ -208,6 +208,45 @@ export async function updateBookingAction(formData: FormData) {
   }
 }
 
+export async function addBookingSetPhotoAction(formData: FormData) {
+  try {
+    const bookingId = normalize(formData.get('BookingID'));
+    const setId = normalize(formData.get('SetID'));
+    const photoUrl = normalize(formData.get('PhotoURL'));
+    const context = { currentUserName: normalize(formData.get('currentUserName')), currentUserRole: normalize(formData.get('currentUserRole')) };
+    if (!bookingId || !setId || !photoUrl) return { success: false, error: 'Booking, set, and photo link are required.' };
+
+    const { booking } = await findBookingRow(bookingId);
+    if (!canUpdateBooking(booking, context)) return { success: false, error: 'You do not have permission to add set photos.' };
+
+    const response = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: 'BookingSets!A1:Z' });
+    const [headers = [], ...rows] = response.data.values || [];
+    const bookingColumn = headers.indexOf('BookingID');
+    const setColumn = headers.indexOf('SetID');
+    const photoColumns = ['Photo1', 'Photo2', 'Photo3', 'Photo4', 'Photo5', 'Photo6', 'Photo7']
+      .map((header) => ({ header, index: headers.indexOf(header) }))
+      .filter((column) => column.index !== -1);
+    if (bookingColumn === -1 || setColumn === -1 || photoColumns.length === 0) throw new Error('BookingSets must include BookingID, SetID, and at least one Photo column.');
+
+    const rowIndex = rows.findIndex((row) => normalize(row[bookingColumn]) === bookingId && normalize(row[setColumn]) === setId);
+    if (rowIndex === -1) return { success: false, error: `Set ${setId} is not linked to this booking.` };
+    const targetColumn = photoColumns.find((column) => !normalize(rows[rowIndex][column.index]));
+    if (!targetColumn) return { success: false, error: 'All seven photo slots are already in use for this set.' };
+
+    const columnLetter = String.fromCharCode(65 + targetColumn.index);
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `BookingSets!${columnLetter}${rowIndex + 2}`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [[photoUrl]] },
+    });
+    return { success: true, message: 'Set photo added.' };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Could not add the set photo.';
+    return { success: false, error: message };
+  }
+}
+
 export async function deleteBookingAction(formData: FormData) {
   try {
     const bookingId = normalize(formData.get('BookingID'));

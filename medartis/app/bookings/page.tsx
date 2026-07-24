@@ -8,9 +8,11 @@ import AddBookingModal from '../components/AddBookingModal';
 import EditBookingModal from '../components/EditBookingModal';
 import BookingFullScreenView from '../components/BookingFullScreenView';
 import AddUsageModal from '../components/AddUsageModal';
+import AddSetPhotoModal from '../components/AddSetPhotoModal';
 import SetDetailsDrawer from '../components/SetDetailsDrawer';
-import { fetchEnrichedSets, VirtualSet, EnrichedTray, fetchTraysAndUsageForSet } from '../actions/getSetsAction';
+import { fetchEnrichedSets, VirtualSet } from '../actions/getSetsAction';
 import { buildAppSheetImageUrl } from '../lib/appsheet-image-url';
+import type { BookingSet } from '../types/interfaces';
 
 export default function BookingsDashboardPage() {
   const [bookings, setBookings] = useState<EnhancedBooking[]>([]);
@@ -31,9 +33,10 @@ export default function BookingsDashboardPage() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [fullScreenBooking, setFullScreenBooking] = useState<EnhancedBooking | null>(null);
   const [editingBooking, setEditingBooking] = useState<EnhancedBooking | null>(null);
-  const [usageModalState, setUsageModalState] = useState<{ isOpen: boolean; booking: EnhancedBooking | null; set: VirtualSet | null; trays: EnrichedTray[] }>({
-    isOpen: false, booking: null, set: null, trays: []
+  const [usageModalState, setUsageModalState] = useState<{ isOpen: boolean; booking: EnhancedBooking | null; initialSetId?: string }>({
+    isOpen: false, booking: null, initialSetId: undefined
   });
+  const [setPhotoTarget, setSetPhotoTarget] = useState<{ bookingId: string; setId: string } | null>(null);
 
   const [availableSets, setAvailableSets] = useState<VirtualSet[]>([]);
 
@@ -221,22 +224,8 @@ export default function BookingsDashboardPage() {
     }
   };
 
-  const handleOpenUsageModal = async (booking: EnhancedBooking, setId: string) => {
-    const set = availableSets.find(s => s.SetID === setId) || null;
-    if (!set) {
-      setErrorMessage(`Could not find details for set ${setId}`);
-      return;
-    }
-
-    setLoading(true);
-    const traysRes = await fetchTraysAndUsageForSet(setId);
-    setLoading(false);
-
-    if (traysRes.success) {
-      setUsageModalState({ isOpen: true, booking, set, trays: traysRes.trays });
-    } else {
-      setErrorMessage(traysRes.error || `Failed to load trays for ${setId}`);
-    }
+  const handleOpenUsageModal = (booking: EnhancedBooking, initialSetId?: string) => {
+    setUsageModalState({ isOpen: true, booking, initialSetId });
   };
   return (
     <div className="w-full p-2 font-sans">
@@ -503,31 +492,21 @@ export default function BookingsDashboardPage() {
                                           const isActive = selectedSetTabs[booking.BookingID] === set.SetID;
 
                                           return (
-                                            <button
+                                            <div
                                               key={idx}
-                                              type="button"
-                                              onClick={() => {
-                                                setSelectedSetTabs(prev => ({
-                                                  ...prev,
-                                                  [booking.BookingID]: isActive ? null : set.SetID
-                                                }));
-                                              }}
-                                              className={`text-left px-2.5 py-1.5 rounded font-mono text-[11px] border font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs ${
-                                                      isActive
-                                                        ? 'bg-primary text-primary-content border-primary'
-                                                        : 'bg-info/10 hover:bg-info/20 text-info border-info/20'
+                                              className={`px-2.5 py-1.5 rounded font-mono text-[11px] border font-bold transition-all flex items-center gap-1.5 shadow-xs ${
+                                                isActive ? 'bg-primary text-primary-content border-primary' : 'bg-info/10 text-info border-info/20'
                                               }`}
                                             >
                                               <button
                                                 type="button"
-                                                className="flex-1 text-left"
-                                                onClick={() => handleOpenUsageModal(booking, set.SetID)}
-                                                title={`Add usage for ${set.SetID}`}
+                                                onClick={() => setSelectedSetTabs(prev => ({ ...prev, [booking.BookingID]: isActive ? null : set.SetID }))}
+                                                className="text-left hover:underline"
+                                                title={`Preview photos for ${set.SetID}`}
                                               >
-                                                📦 {set.SetID}
-                                                <span className="text-[9px] opacity-70 font-medium">({activePhotosArray.length} 📷)</span>
+                                                📦 {set.SetID} <span className="text-[9px] opacity-70 font-medium">({activePhotosArray.length} 📷)</span>
                                               </button>
-                                            </button>
+                                            </div>
                                           );
                                         })}
                                       </div>
@@ -588,6 +567,15 @@ export default function BookingsDashboardPage() {
                                             ) : (
                                               <p className="text-[11px] italic opacity-40 font-mono">No photos attached to this set.</p>
                                             )}
+                                            <div className="flex justify-end border-t border-base-200 pt-3">
+                                              <button
+                                                type="button"
+                                                onClick={() => setSetPhotoTarget({ bookingId: booking.BookingID, setId: selectedSet.SetID })}
+                                                className="btn btn-outline btn-primary btn-xs"
+                                              >
+                                                + Add set photo
+                                              </button>
+                                            </div>
                                           </div>
                                         );
                                       })()}
@@ -890,11 +878,19 @@ export default function BookingsDashboardPage() {
 
       <AddUsageModal
         isOpen={usageModalState.isOpen}
-        onClose={() => setUsageModalState({ isOpen: false, booking: null, set: null, trays: [] })}
+        onClose={() => setUsageModalState({ isOpen: false, booking: null, initialSetId: undefined })}
         onSuccess={initPage}
         booking={usageModalState.booking}
-        set={usageModalState.set}
-        trays={usageModalState.trays}
+        availableSets={availableSets}
+        initialSetId={usageModalState.initialSetId}
+      />
+      <AddSetPhotoModal
+        bookingId={setPhotoTarget?.bookingId || null}
+        setId={setPhotoTarget?.setId || null}
+        currentUserName={currentUserName}
+        currentUserRole={currentUserRole}
+        onClose={() => setSetPhotoTarget(null)}
+        onSuccess={initPage}
       />
       <SetDetailsDrawer set={drawerTargetSet as VirtualSet | null} isOpen={isSetDrawerOpen} onClose={() => setIsSetDrawerOpen(false)} />
     </div>
