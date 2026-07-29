@@ -1,7 +1,7 @@
 // app/components/SetInventoryCard.tsx
 'use client';
 
-import { VirtualSet } from '../actions/getSetsAction';
+import type { VirtualSet } from '../types/interfaces';
 
 interface SetCardProps {
   set: VirtualSet;

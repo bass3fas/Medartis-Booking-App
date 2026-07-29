@@ -2,13 +2,7 @@
 
 import { useMemo, useRef, useState, useTransition } from 'react';
 import { deleteBookingAction, EditableBooking, updateBookingAction } from '../actions/bookingMutationsAction';
-
-export interface BookingSetOption {
-  SetID: string;
-  SetName: string;
-  computedStatus?: string;
-  LoanType?: string;
-}
+import type { BookingSetOption } from '../types/interfaces';
 
 interface EditBookingModalProps {
   booking: EditableBooking | null;

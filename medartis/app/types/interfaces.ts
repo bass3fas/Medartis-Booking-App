@@ -21,6 +21,7 @@ export interface Sets {
   SetStatus?: string;
   "Current Location"?: string;
   "Set Complete?"?: string;
+  IsComplete?: string;
 }
 
 export interface Trays {
@@ -87,15 +88,6 @@ export interface BookingSet {
   Photo7?: string;
 }
 
-// Update your EnhancedBooking type to match columns 20, 23, and 24
-export type EnhancedBooking = {
-  BookingID: string;
-  // ... other standard booking fields
-  RelatedBookingSets: BookingSet[]; // Column 20: REF_ROWS("BookingSets", "BookingID")
-  RelatedUsages: any[];            // Column 23: REF_ROWS("Usage", "BookingID")
-  RelatedUsagePhotos: any[];       // Column 24: REF_ROWS("Usage Photos", "BookingID")
-};
-
 export interface Usage {
   UsageID: string;
   BookingID: string;
@@ -115,6 +107,7 @@ export interface Usage {
   "Set Delivery Note"?: string;
   "Refill Delivery Note"?: string;
   "Usage Status"?: string;
+  Status?: string;
   Description?: string;
 }
 
@@ -165,4 +158,76 @@ export interface PatientMRNGroup {
   BookingID: string;
   items: EnrichedUsage[];
   photos: string[];
+}
+// Shared view models used by server actions and client components.
+export interface PatientUsageSummary {
+  MRN: string;
+  PhotoUrl: string;
+  UsageLogSheet?: string;
+  Items: Array<{
+    ItemCode: string;
+    Description: string;
+    Quantity: number;
+  }>;
+}
+
+export interface FlexibleBookingSet extends BookingSet {
+  [key: string]: any;
+}
+
+export type EnhancedBooking = Bookings & {
+  Type?: string;
+  PatientUsages: PatientUsageSummary[];
+  RelatedBookingSets: FlexibleBookingSet[];
+};
+
+export interface VirtualSet extends Sets {
+  computedStatus: 'Free' | 'Booked';
+  computedComplete: 'Yes' | 'No';
+  computedLocation: string;
+}
+
+export interface VirtualUsage extends Usage {
+  computedUsageStatus: 'Refilled' | 'Pending to Refill';
+}
+
+export interface VirtualTraysContent extends TraysContent {
+  computedCurrentQty: number;
+  itemHistory: VirtualUsage[];
+}
+
+export interface EnrichedTray extends Trays {
+  computedTrayStatus: 'Complete' | 'InComplete';
+  contents: VirtualTraysContent[];
+}
+
+export interface PartAllocationRef {
+  SetID: string;
+  TrayID: string;
+  TrayName: string;
+  CurrentQty: number;
+}
+
+export interface VirtualPartsMaster extends PartsMaster {
+  inSetsQty: number;
+  rowIndex: string;
+  allocations: PartAllocationRef[];
+  history: Usage[];
+}
+
+export interface UsageItemInput {
+  id: number;
+  trayId: string;
+  partNumber: string;
+  itemId: string;
+  description: string;
+  qtyUsed: number;
+  qtyRefilled: number;
+}
+
+export interface BookingSetOption {
+  SetID: string;
+  SetName: string;
+  computedStatus?: string;
+  LoanType?: string;
 }

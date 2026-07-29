@@ -3,7 +3,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { EnhancedBooking } from '../actions/getBookingsAction';
+import type { EnhancedBooking } from '../types/interfaces';
 import { buildAppSheetImageUrl } from '../lib/appsheet-image-url';
 
 interface FullScreenViewProps {
