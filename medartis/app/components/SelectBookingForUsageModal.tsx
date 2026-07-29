@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import type { EnhancedBooking } from '../actions/getBookingsAction';
+import type { EnhancedBooking } from '../types/interfaces';
 
 interface Props { bookings: EnhancedBooking[]; onClose: () => void; onSelect: (booking: EnhancedBooking) => void; }
 

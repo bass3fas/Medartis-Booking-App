@@ -3,14 +3,7 @@
 
 import { useState, useTransition, useRef, useEffect } from 'react';
 import { addBookingAction } from '../actions/addBookingAction';
-
-// Minimal interfaces to support shared components
-interface BookingSetOption {
-  SetID: string;
-  SetName: string;
-  computedStatus?: string;
-  LoanType?: string;
-}
+import type { BookingSetOption } from '../types/interfaces';
 
 const REQUESTED_SET_OPTIONS: BookingSetOption[] = [
   'ANKLE 2.8/3.5', 'CLAVICLE 2.8', 'CCS 1.7', 'CCS 2.2 / 3.0', 'CCS SPEEDTIP 4.0',

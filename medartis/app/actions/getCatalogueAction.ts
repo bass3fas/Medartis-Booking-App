@@ -2,23 +2,9 @@
 'use server';
 
 import { google } from 'googleapis';
-import { PartsMaster, TraysContent, Usage, Trays } from '../types/interfaces';
+import type { PartsMaster, TraysContent, Usage, Trays, PartAllocationRef, VirtualPartsMaster } from '../types/interfaces';
 
-export interface PartAllocationRef {
-  SetID: string;
-  TrayID: string;
-  TrayName: string;
-  CurrentQty: number;
-}
-
-export interface VirtualPartsMaster extends PartsMaster {
-  inSetsQty: number;
-  rowIndex: string;
-  allocations: PartAllocationRef[];
-  history: Usage[];
-}
-
-async function getSheetRows(rangeName: string): Promise<any[]> {
+async function getSheetRows(rangeName: string): Promise<string[][]> {
   const auth = new google.auth.JWT({
     email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
     key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
@@ -44,46 +30,46 @@ export async function fetchPartsCatalogue(): Promise<{ success: boolean; data: V
     if (rawParts.length < 2) return { success: true, data: [] };
 
     const [partsHeaders, ...partsRows] = rawParts;
-    const partsMasterList: PartsMaster[] = partsRows.map(row => {
-      const obj: any = {};
-      partsHeaders.forEach((h, i) => { obj[h] = row[i] !== undefined ? row[i] : ''; });
-      return obj as PartsMaster;
+    const partsMasterList: PartsMaster[] = partsRows.map((row: string[]) => {
+      const obj: Record<string, string> = {};
+      partsHeaders.forEach((h: string, i: number) => { obj[h] = row[i] !== undefined ? row[i] : ''; });
+      return obj as unknown as PartsMaster;
     });
 
     // Parse TraysContent
     const traysContentList: TraysContent[] = rawContents.length >= 2 ? (() => {
       const [headers, ...rows] = rawContents;
-      return rows.map(row => {
-        const obj: any = {};
-        headers.forEach((h, i) => { obj[h] = row[i] !== undefined ? row[i] : ''; });
-        return obj as TraysContent;
+      return rows.map((row: string[]) => {
+        const obj: Record<string, string> = {};
+        headers.forEach((h: string, i: number) => { obj[h] = row[i] !== undefined ? row[i] : ''; });
+        return obj as unknown as TraysContent;
       });
     })() : [];
 
     // Parse Usage
     const usageList: Usage[] = rawUsages.length >= 2 ? (() => {
       const [headers, ...rows] = rawUsages;
-      return rows.map(row => {
-        const obj: any = {};
-        headers.forEach((h, i) => { obj[h] = row[i] !== undefined ? row[i] : ''; });
-        return obj as Usage;
+      return rows.map((row: string[]) => {
+        const obj: Record<string, string> = {};
+        headers.forEach((h: string, i: number) => { obj[h] = row[i] !== undefined ? row[i] : ''; });
+        return obj as unknown as Usage;
       });
     })() : [];
 
     // Parse Trays Layout Map
     const traysList: Trays[] = rawTrays.length >= 2 ? (() => {
       const [headers, ...rows] = rawTrays;
-      return rows.map(row => {
-        const obj: any = {};
-        headers.forEach((h, i) => { obj[h] = row[i] !== undefined ? row[i] : ''; });
-        return obj as Trays;
+      return rows.map((row: string[]) => {
+        const obj: Record<string, string> = {};
+        headers.forEach((h: string, i: number) => { obj[h] = row[i] !== undefined ? row[i] : ''; });
+        return obj as unknown as Trays;
       });
     })() : [];
 
     // 1. Core Item Math Step
     const virtualContents = traysContentList.map(item => {
       const ideal = Number(item.IdealQty) || 0;
-      const baseQty = (item.ActualQty === undefined || item.ActualQty === '') ? ideal : Number(item.ActualQty) || 0;
+      const baseQty = !String(item.ActualQty ?? '').trim() ? ideal : Number(item.ActualQty) || 0;
 
       const pendingUsageSum = usageList
         .filter(u => u.ItemID === item.ItemID && (u["Usage Status"] === 'Pending to Refill' || u.Status === 'Pending to Refill'))

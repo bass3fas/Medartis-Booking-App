@@ -3,7 +3,8 @@
 
 import { useState, useEffect, Fragment, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { VirtualSet, fetchTraysAndUsageForSet, EnrichedTray, VirtualUsage } from '../actions/getSetsAction';
+import { fetchTraysAndUsageForSet } from '../actions/getSetsAction';
+import type { EnrichedTray, VirtualSet, VirtualUsage } from '../types/interfaces';
 import { buildAppSheetImageUrl } from '../lib/appsheet-image-url';
 import { EnhancedBooking, fetchBookingsLog } from '../actions/getBookingsAction';
 

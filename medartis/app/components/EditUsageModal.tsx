@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { updateUsageAction } from '../actions/usageMutationsAction';
-import { fetchTraysAndUsageForSet, type EnrichedTray } from '../actions/getSetsAction';
-import type { EnhancedBooking } from '../actions/getBookingsAction';
+import { fetchTraysAndUsageForSet } from '../actions/getSetsAction';
+import type { EnrichedTray } from '../types/interfaces';
+import type { EnhancedBooking } from '../types/interfaces';
 import type { EnrichedUsage } from '../types/interfaces';
 
 interface Props { usage: EnrichedUsage | null; booking: EnhancedBooking | null; currentUserRole: string; onClose: () => void; onSuccess: () => void; }

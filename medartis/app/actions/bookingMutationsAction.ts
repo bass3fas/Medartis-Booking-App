@@ -5,7 +5,7 @@ import { google } from 'googleapis';
 import { z } from 'zod';
 import { uploadPhotoToDrive, deletePhotoFromDrive } from '../lib/googleDrive';
 import { sheets, SPREADSHEET_ID } from '../lib/google-sheets';
-import { EnhancedBooking } from './getBookingsAction';
+import type { EnhancedBooking } from '../types/interfaces';
 
 const BOOKING_HEADERS = [
   'BookingID',
@@ -227,7 +227,7 @@ export async function addBookingSetPhotoAction(formData: FormData) {
     });
 
     if (!validation.success) {
-      return { success: false, error: validation.error.errors.map(e => e.message).join(', ') };
+      return { success: false, error: validation.error.issues.map(e => e.message).join(', ') };
     }
 
     const { BookingID, SetID, photo } = validation.data;
@@ -267,7 +267,7 @@ export async function addBookingSetPhotoAction(formData: FormData) {
     if (bookingColumn === -1 || setColumn === -1 || photoColumns.length === 0) throw new Error('BookingSets must include BookingID, SetID, and at least one Photo column.');
 
     const rowIndex = rows.findIndex((row) => normalize(row[bookingColumn]) === BookingID && normalize(row[setColumn]) === SetID);
-    if (rowIndex === -1) return { success: false, error: `Set ${setId} is not linked to this booking.` };
+    if (rowIndex === -1) return { success: false, error: `Set ${SetID} is not linked to this booking.` };
     const targetColumn = photoColumns.find((column) => !normalize(rows[rowIndex][column.index]));
     if (!targetColumn) return { success: false, error: 'All seven photo slots are already in use for this set.' };
 

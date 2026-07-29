@@ -2,8 +2,9 @@
 
 import { useMemo, useState, useTransition } from 'react';
 import { addBookingUsageAction } from '../actions/addUsageAction';
-import { EnrichedTray, fetchTraysAndUsageForSet } from '../actions/getSetsAction';
-import { EnhancedBooking } from '../actions/getBookingsAction';
+import { fetchTraysAndUsageForSet } from '../actions/getSetsAction';
+import type { EnrichedTray } from '../types/interfaces';
+import type { EnhancedBooking } from '../types/interfaces';
 
 interface AddUsagePanelProps {
   booking: EnhancedBooking;

@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { addBookingUsageAction } from '../actions/addUsageAction';
-import type { EnhancedBooking } from '../actions/getBookingsAction';
-import { fetchTraysAndUsageForSet, type EnrichedTray, type VirtualSet } from '../actions/getSetsAction';
+import type { EnhancedBooking } from '../types/interfaces';
+import { fetchTraysAndUsageForSet } from '../actions/getSetsAction';
+import type { EnrichedTray, VirtualSet } from '../types/interfaces';
 
 interface AddUsageModalProps {
   isOpen: boolean;

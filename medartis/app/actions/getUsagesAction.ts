@@ -7,7 +7,7 @@ import { EnrichedUsage, PatientMRNGroup } from '../types/interfaces';
 
 
 
-async function getSheetRows(rangeName: string): Promise<any[]> {
+async function getSheetRows(rangeName: string): Promise<string[][]> {
   const auth = new google.auth.JWT({
     email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
     key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
@@ -48,7 +48,7 @@ export async function fetchUsageLog(): Promise<{ success: boolean; data: Patient
       const partNumIdx = partsHeaders.indexOf('PartNumber');
       const descIdx = partsHeaders.indexOf('Description');
       if (partNumIdx !== -1 && descIdx !== -1) {
-        partsRows.forEach(row => {
+        partsRows.forEach((row: string[]) => {
           if (row[partNumIdx]) {
             partsDescriptionMap[row[partNumIdx].toString().trim().toLowerCase()] = row[descIdx] || '';
           }
@@ -58,9 +58,9 @@ export async function fetchUsageLog(): Promise<{ success: boolean; data: Patient
 
     // 2. Parse Usage Log items (Keep as is...)
     const [usageHeaders, ...usageRows] = rawUsages;
-    const usageList: EnrichedUsage[] = usageRows.map((row, idx) => {
-      const item: any = {};
-      usageHeaders.forEach((h, i) => { item[h] = row[i] !== undefined ? row[i] : ''; });
+    const usageList: EnrichedUsage[] = usageRows.map((row: string[], idx: number) => {
+      const item: Record<string, string> = {};
+      usageHeaders.forEach((h: string, i: number) => { item[h] = row[i] !== undefined ? row[i] : ''; });
       const used = Number(item.QtyUsed) || 0;
       const refilled = Number(item["Qty Refilled"]) || 0;
       
@@ -73,16 +73,16 @@ export async function fetchUsageLog(): Promise<{ success: boolean; data: Patient
         ...item,
         computedUsageStatus: used === refilled ? 'Refilled' : 'Pending to Refill',
         rowIndex: `usage-row-${idx}`
-      };
+      } as unknown as EnrichedUsage;
     });
 
     // 3. Parse standalone Usage Photos (Keep as is...)
     let photoList: any[] = [];
     if (rawPhotos.length >= 2) {
       const [photoHeaders, ...photoRows] = rawPhotos;
-      photoList = photoRows.map(row => {
-        const obj: any = {};
-        photoHeaders.forEach((h, i) => { obj[h] = row[i] !== undefined ? row[i] : ''; });
+      photoList = photoRows.map((row: string[]) => {
+        const obj: Record<string, string> = {};
+        photoHeaders.forEach((h: string, i: number) => { obj[h] = row[i] !== undefined ? row[i] : ''; });
         return obj;
       });
     }
