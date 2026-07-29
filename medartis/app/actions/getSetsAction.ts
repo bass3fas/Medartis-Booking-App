@@ -2,28 +2,8 @@
 'use server';
 
 import { getSets, getBookings, getTrays, getUsage } from '../lib/google-sheets';
-import { Trays, TraysContent, Usage, Sets } from '../types/interfaces';
+import type { EnrichedTray, TraysContent, VirtualSet, VirtualTraysContent, VirtualUsage } from '../types/interfaces';
 import { google } from 'googleapis';
-
-export interface VirtualSet extends Sets {
-  computedStatus: 'Free' | 'Booked';
-  computedComplete: 'Yes' | 'No';
-  computedLocation: string;
-}
-
-export interface VirtualUsage extends Usage {
-  computedUsageStatus: 'Refilled' | 'Pending to Refill';
-}
-
-export interface VirtualTraysContent extends TraysContent {
-  computedCurrentQty: number;
-  itemHistory: VirtualUsage[];
-}
-
-export interface EnrichedTray extends Trays {
-  computedTrayStatus: 'Complete' | 'InComplete';
-  contents: VirtualTraysContent[];
-}
 
 // Low-level helper to fetch TraysContent sheets data directly
 async function getRawTraysContent(): Promise<TraysContent[]> {
@@ -43,11 +23,11 @@ async function getRawTraysContent(): Promise<TraysContent[]> {
 
   const [headers, ...dataRows] = rows;
   return dataRows.map((row) => {
-    const item: any = {};
-    headers.forEach((header, index) => {
+    const item: Record<string, string> = {};
+    headers.forEach((header: string, index: number) => {
       item[header] = row[index] !== undefined ? row[index] : '';
     });
-    return item as TraysContent;
+    return item as unknown as TraysContent;
   });
 }
 
@@ -91,7 +71,7 @@ export async function fetchEnrichedSets(): Promise<{ success: boolean; data: Vir
 
           trayContents.forEach(item => {
             const ideal = Number(item.IdealQty) || 0;
-            const baseQty = (item.ActualQty === undefined || item.ActualQty === '') ? ideal : Number(item.ActualQty) || 0;
+            const baseQty = !String(item.ActualQty ?? '').trim() ? ideal : Number(item.ActualQty) || 0;
             const pendingUsageSum = processedUsages
               .filter(u => u.ItemID === item.ItemID && u.computedUsageStatus === 'Pending to Refill')
               .reduce((sum, u) => sum + (Number(u.QtyUsed) || 0), 0);
@@ -200,7 +180,7 @@ export async function fetchTraysAndUsageForSet(setId: string): Promise<{
       
       const contents: VirtualTraysContent[] = relatedContents.map(item => {
         const ideal = Number(item.IdealQty) || 0;
-        const baseQty = (item.ActualQty === undefined || item.ActualQty === '') ? ideal : Number(item.ActualQty) || 0;
+        const baseQty = !String(item.ActualQty ?? '').trim() ? ideal : Number(item.ActualQty) || 0;
         
         const itemHistory = processedUsages.filter(u => u.ItemID === item.ItemID);
 

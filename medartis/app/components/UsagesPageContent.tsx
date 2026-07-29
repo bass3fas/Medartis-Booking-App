@@ -1,0 +1,308 @@
+// app/components/UsagesPageContent.tsx
+'use client';
+
+import { useState, useEffect, useCallback, useTransition } from 'react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { fetchUsageLog } from '../actions/getUsagesAction';
+import { fetchBookingsLog } from '../actions/getBookingsAction';
+import type { EnhancedBooking } from '../types/interfaces';
+import { fetchEnrichedSets } from '../actions/getSetsAction';
+import type { VirtualSet } from '../types/interfaces';
+import { EnrichedUsage, PatientMRNGroup } from '../types/interfaces';
+import EditUsageModal from './EditUsageModal';
+import AddUsageModal from './AddUsageModal';
+import SelectBookingForUsageModal from './SelectBookingForUsageModal';
+import { deleteUsageAction, refillUsageAction } from '../actions/usageMutationsAction';
+
+export default function GroupedUsageLogPage() {
+  const searchParams = useSearchParams();
+  const [cases, setCases] = useState<PatientMRNGroup[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  // Filtering Options
+  const [searchQuery, setSearchQuery] = useState('');
+  const [hospitalFilter, setHospitalFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'Refilled' | 'Pending to Refill'>('all'); // 🔄 Restored
+  const [expandedCaseKey, setExpandedCaseKey] = useState<string | null>(null);
+  const [editingUsage, setEditingUsage] = useState<EnrichedUsage | null>(null);
+  const [currentUserRole, setCurrentUserRole] = useState('');
+  const [isDeleting, startDeleteTransition] = useTransition();
+  const [bookings, setBookings] = useState<EnhancedBooking[]>([]);
+  const [availableSets, setAvailableSets] = useState<VirtualSet[]>([]);
+  const [isBookingPickerOpen, setIsBookingPickerOpen] = useState(false);
+  const [usageBooking, setUsageBooking] = useState<EnhancedBooking | null>(null);
+
+  const canManageUsage = ['admin', 'warehouse'].includes(currentUserRole.trim().toLowerCase());
+
+  const syncLedger = useCallback(async () => {
+    setLoading(true);
+    const res = await fetchUsageLog();
+    if (res.success) setCases(res.data);
+    else setErrorMessage(res.error || 'Failed to populate case group logs.');
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    const mrn = searchParams.get('mrn');
+    if (mrn) {
+      setSearchQuery(mrn);
+      setExpandedCaseKey(null);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    syncLedger();
+    fetchBookingsLog().then((result) => { if (result.success) setBookings(result.data); });
+    fetchEnrichedSets().then((result) => { if (result.success) setAvailableSets(result.data); });
+    try {
+      const session = JSON.parse(localStorage.getItem('medartis_session_token') || '{}');
+      setCurrentUserRole(session.role || '');
+    } catch { setCurrentUserRole(''); }
+  }, [syncLedger]);
+
+  const deleteUsage = (usageId: string) => {
+    if (!window.confirm('Delete this usage entry? This cannot be undone.')) return;
+    startDeleteTransition(async () => {
+      const formData = new FormData();
+      formData.set('UsageID', usageId);
+      formData.set('currentUserRole', currentUserRole);
+      const result = await deleteUsageAction(formData);
+      if (result.success) await syncLedger();
+      else setErrorMessage(result.error || 'Could not delete usage.');
+    });
+  };
+
+  const refillUsage = (usageIds: string[]) => {
+    const message = usageIds.length === 1 ? 'Mark this usage line as fully refilled?' : `Mark all ${usageIds.length} usage lines for this MRN as fully refilled?`;
+    if (!window.confirm(message)) return;
+    startDeleteTransition(async () => {
+      const formData = new FormData();
+      formData.set('UsageIDs', JSON.stringify(usageIds));
+      formData.set('currentUserRole', currentUserRole);
+      const result = await refillUsageAction(formData);
+      if (result.success) await syncLedger();
+      else setErrorMessage(result.error || 'Could not refill usage.');
+    });
+  };
+
+  const uniqueHospitals = Array.from(new Set(cases.map(c => c.Hospital).filter(Boolean))).sort();
+
+  // Multi-pipeline filtering execution logic
+  const filteredCases = cases.filter((c: PatientMRNGroup) => {
+    const matchesSearch = 
+      c.PatientMRN.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.BookingID.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.items.some((item: EnrichedUsage) => (item.PartNumber || '').toLowerCase().includes(searchQuery.toLowerCase()));
+
+    const matchesHospital = hospitalFilter === 'all' || c.Hospital === hospitalFilter;
+
+    // 🔄 Evaluate structural status flags for the group container
+    const hasPendingItems = c.items.some((item: EnrichedUsage) => item.computedUsageStatus === 'Pending to Refill');
+    const matchesStatus = 
+      statusFilter === 'all' || 
+      (statusFilter === 'Pending to Refill' && hasPendingItems) || 
+      (statusFilter === 'Refilled' && !hasPendingItems);
+
+    return matchesSearch && matchesHospital && matchesStatus;
+  });
+
+  return (
+    <div className="w-full p-2 font-sans">
+      
+      {/* Upper Brand Badge */}
+      <div className="mb-6 flex items-center justify-between gap-4 border-b border-base-300 pb-3">
+        <div><h1 className="text-xl font-black tracking-tight text-base-content">Surgical Cases & Usages</h1><p className="text-xs font-mono opacity-50 mt-0.5">Aggregated metrics grouped by Patient MRN and clinical confirmation images</p></div>
+        <button type="button" onClick={() => setIsBookingPickerOpen(true)} className="btn btn-primary btn-sm">+ Add Usage</button>
+      </div>
+
+      {errorMessage && (
+        <div className="alert alert-error text-xs mb-6 text-error-content font-mono">
+          <span>⚠️ {errorMessage}</span>
+        </div>
+      )}
+
+      {/* Quick Controls Bar Panel */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4 p-4 bg-base-100 border border-base-300 rounded-xl shadow-sm">
+        <input 
+          type="text" 
+          placeholder="Search Patient MRN, Booking code, component..." 
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="input input-sm input-bordered font-semibold text-xs bg-base-50 focus:outline-none"
+        />
+        
+        {/* 🔄 Re-injected Status Filter Control Dropdown */}
+        <select 
+          value={statusFilter} 
+          onChange={(e) => setStatusFilter(e.target.value as any)} 
+          className="select select-sm select-bordered font-semibold text-xs bg-base-50"
+        >
+          <option value="all">All Case Statuses</option>
+          <option value="Refilled">Fully Refilled Cases</option>
+          <option value="Pending to Refill">Cases with Pending Refills</option>
+        </select>
+
+        <select 
+          value={hospitalFilter} 
+          onChange={(e) => setHospitalFilter(e.target.value)} 
+          className="select select-sm select-bordered font-semibold text-xs bg-base-50"
+        >
+          <option value="all">All Facilities ({uniqueHospitals.length})</option>
+          {uniqueHospitals.map(h => <option key={h} value={h}>{h}</option>)}
+        </select>
+      </div>
+
+      {/* Core Accordion Canvas View */}
+      {loading ? (
+        <div className="flex flex-col items-center justify-center py-24 gap-2">
+          <span className="loading loading-ring loading-md text-primary"></span>
+          <span className="text-[10px] font-mono tracking-widest opacity-40 font-bold uppercase">Compiling Case Timelines...</span>
+        </div>
+      ) : filteredCases.length === 0 ? (
+        <div className="p-12 text-center bg-base-100 rounded-xl border border-base-300 italic opacity-40 text-xs">
+          No registered surgical files match selected tracking parameters.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {filteredCases.map((caseGroup) => {
+            const caseKey = caseGroup.groupKey;
+            const isExpanded = expandedCaseKey === caseKey;
+            const pendingItemsCount = caseGroup.items.filter((i: EnrichedUsage) => i.computedUsageStatus === 'Pending to Refill').length;
+
+            return (
+              <div 
+                key={caseKey} 
+                className={`border rounded-xl bg-base-100 shadow-sm transition-all overflow-hidden ${
+                  isExpanded ? 'border-primary shadow-md' : 'border-base-300 hover:border-base-400'
+                }`}
+              >
+                {/* 💳 Clickable Case Card Header */}
+                <div 
+                  onClick={() => setExpandedCaseKey(isExpanded ? null : caseKey)}
+                  className="p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 cursor-pointer select-none hover:bg-base-50/40 transition-colors"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-black font-mono text-primary bg-primary/5 px-2 py-0.5 rounded border border-primary/10">
+                        {caseGroup.PatientMRN}
+                      </span>
+                      <Link href={`/bookings?bookingId=${encodeURIComponent(caseGroup.BookingID)}`} onClick={(event) => event.stopPropagation()} className="text-xs font-mono font-semibold text-primary hover:underline">Booking: {caseGroup.BookingID}</Link>
+                    </div>
+                    <p className="text-xs font-sans font-bold text-base-content/80 tracking-tight">
+                      {caseGroup.Hospital} <span className="opacity-40 mx-1">|</span> <span className="font-mono opacity-60 text-[11px]">{caseGroup.Date}</span>
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-3 self-end sm:self-auto font-mono text-[11px]">
+                    <span className="opacity-60 font-semibold">Consumptions: <strong>{caseGroup.items.length}</strong></span>
+                    {pendingItemsCount > 0 ? (
+                      <span className="badge badge-sm font-bold border-0 bg-warning/10 text-warning px-2 py-2">
+                        {pendingItemsCount} Pending Refill
+                      </span>
+                    ) : (
+                      <span className="badge badge-sm font-bold border-0 bg-success/10 text-success px-2 py-2">
+                        Fully Refilled
+                      </span>
+                    )}
+                    <span className={`transform transition-transform font-black text-sm text-base-content/40 pl-1 ${isExpanded ? 'rotate-90 text-primary' : ''}`}>
+                      ▶
+                    </span>
+                  </div>
+                </div>
+
+                {/* 📂 Expanded Content Portal Area */}
+                {isExpanded && (
+                  <div className="p-4 border-t border-base-200 bg-base-50/30 grid grid-cols-1 lg:grid-cols-12 gap-5 shadow-inner">
+                    
+                    {/* LEFT PANEL: Consumption Table Ledger Rows */}
+                    <div className="lg:col-span-7 space-y-2">
+                      <div className="flex items-center justify-between gap-3"><p className="text-[10px] font-mono uppercase font-black opacity-40 tracking-wider">Consumed Implant Element Specifications</p>{canManageUsage && <button type="button" onClick={() => refillUsage(cases.filter((group) => group.PatientMRN === caseGroup.PatientMRN).flatMap((group) => group.items).filter((item) => item.computedUsageStatus !== 'Refilled').map((item) => item.UsageID))} disabled={isDeleting || !cases.some((group) => group.PatientMRN === caseGroup.PatientMRN && group.items.some((item) => item.computedUsageStatus !== 'Refilled'))} className="btn btn-outline btn-success btn-xs">Refill all MRN</button>}</div>
+                      <div className="border border-base-300 rounded-xl overflow-hidden bg-base-100 max-h-72 overflow-y-auto shadow-sm">
+                        <table className="table table-compact w-full text-xs font-mono">
+                          <thead className="bg-base-100 border-b opacity-60 text-[10px] uppercase font-black">
+                            <tr>
+                              <th className="p-2.5">Part Number / Description</th>
+                              <th className="text-right">Used</th>
+                              <th className="text-right">Refilled</th>
+                              <th className="text-right">Status</th>
+                              {canManageUsage && <th className="text-right">Actions</th>}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-base-100">
+                            {caseGroup.items.map((item: EnrichedUsage) => (
+                              <tr key={item.UsageID} className="hover:bg-base-50/50">
+                                <td className="p-2.5">
+                                  <Link href={`/partsmaster?partNumber=${encodeURIComponent(item.PartNumber || '')}`} className="font-bold text-primary hover:underline block select-all">
+                                    {item.PartNumber}
+                                  </Link>
+                                  <span className="text-[11px] font-sans font-semibold opacity-70 block truncate max-w-70" title={item.Description}>
+                                    {item.Description || 'No description asset mapped'}
+                                  </span>
+                                  <span className="text-[9px] opacity-40 block">{item.TrayID}</span>
+                                </td>
+                                <td className="text-right font-bold text-base-content">{item.QtyUsed}</td>
+                                <td className="text-right opacity-60">{item["Qty Refilled"] || 0}</td>
+                                <td className="text-right">
+                                  <span className={`text-[10px] font-bold ${item.computedUsageStatus === 'Refilled' ? 'text-success' : 'text-warning'}`}>
+                                    {item.computedUsageStatus}
+                                  </span>
+                                </td>
+                                {canManageUsage && <td className="text-right whitespace-nowrap"><button type="button" onClick={() => refillUsage([item.UsageID])} disabled={isDeleting || item.computedUsageStatus === 'Refilled'} className="btn btn-ghost btn-xs text-success">Refill</button><button type="button" onClick={() => setEditingUsage(item)} className="btn btn-ghost btn-xs text-primary">Edit</button><button type="button" onClick={() => deleteUsage(item.UsageID)} disabled={isDeleting} className="btn btn-ghost btn-xs text-error">Delete</button></td>}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* RIGHT PANEL: Case Validation Images */}
+                    <div className="lg:col-span-5 space-y-2">
+                      <p className="text-[10px] font-mono uppercase font-black opacity-40 tracking-wider">
+                        Case Validation Media Images ({caseGroup.photos.length})
+                      </p>
+                      {caseGroup.photos.length === 0 ? (
+                        <div className="h-40 flex items-center justify-center border border-dashed border-base-300 rounded-xl bg-base-100 italic text-xs opacity-40">
+                          No imagery attachments discoverable for this surgical file.
+                        </div>
+                      ) : (
+                        /* 📋 Updated to look like real vertical A4 clipboards */
+                        <div className="grid grid-cols-2 gap-3 max-h-125 overflow-y-auto p-2 bg-base-100 border border-base-300 rounded-xl shadow-sm">
+                          {caseGroup.photos.map((url: string, imgIdx: number) => (
+                            <a 
+                              key={imgIdx} 
+                              href={url} 
+                              target="_blank" 
+                              rel="noreferrer" 
+                              className="group relative block aspect-[1/1.414] bg-base-200/50 border border-base-200 rounded-lg overflow-hidden shadow-sm hover:border-primary transition-all"
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img 
+                                src={url} 
+                                alt={`Clinical verification file ${imgIdx + 1}`}
+                                className="w-full h-full object-contain p-1 group-hover:scale-102 transition-transform duration-200"
+                                loading="lazy" // ⚡ Drastically improves initial loading lag by prioritizing visible items
+                              />
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-[10px] text-white font-mono font-bold p-2 text-center">
+                                <span>View Fullscreen Document ↗</span>
+                              </div>
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <EditUsageModal usage={editingUsage} booking={bookings.find((booking) => booking.BookingID === editingUsage?.BookingID) || null} currentUserRole={currentUserRole} onClose={() => setEditingUsage(null)} onSuccess={syncLedger} />
+      {isBookingPickerOpen && <SelectBookingForUsageModal bookings={bookings} onClose={() => setIsBookingPickerOpen(false)} onSelect={(booking) => { setUsageBooking(booking); setIsBookingPickerOpen(false); }} />}
+      <AddUsageModal isOpen={Boolean(usageBooking)} booking={usageBooking} availableSets={availableSets} onClose={() => setUsageBooking(null)} onSuccess={syncLedger} />
+    </div>
+  );
+}

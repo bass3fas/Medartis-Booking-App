@@ -2,6 +2,7 @@
 
 import crypto from 'crypto';
 import { sheets, SPREADSHEET_ID } from '../lib/google-sheets';
+import type { UsageItemInput } from '../types/interfaces';
 
 function normalize(value: FormDataEntryValue | null): string {
   return String(value ?? '').trim();
@@ -9,16 +10,6 @@ function normalize(value: FormDataEntryValue | null): string {
 
 function newUsageId() {
   return `U-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
-}
-
-interface UsageItem {
-  id: number;
-  trayId: string;
-  partNumber: string;
-  itemId: string;
-  description: string;
-  qtyUsed: number;
-  qtyRefilled: number;
 }
 
 export async function addBookingUsageAction(formData: FormData) {
@@ -38,7 +29,7 @@ export async function addBookingUsageAction(formData: FormData) {
       return { success: false, error: 'Booking, Set, and Patient MRN are required.' };
     }
 
-    let usageItems: UsageItem[];
+    let usageItems: UsageItemInput[];
     try {
       usageItems = JSON.parse(usageItemsJSON);
       if (!Array.isArray(usageItems) || usageItems.length === 0) {

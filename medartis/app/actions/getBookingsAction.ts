@@ -2,30 +2,8 @@
 'use server';
 
 import { google } from 'googleapis';
-import { Bookings } from '../types/interfaces';
+import type { EnhancedBooking, FlexibleBookingSet as BookingSet } from '../types/interfaces';
 import { buildAppSheetImageUrl } from '../lib/appsheet-image-url';
-
-// Update type definition to support flexible fields required by SetDetailsDrawer
-export interface BookingSet {
-  BookingID: string;
-  SetID: string;
-  SetName?: string;
-  Status?: string;
-  Photo1?: string;
-  Photo2?: string;
-  Photo3?: string;
-  Photo4?: string;
-  Photo5?: string;
-  Photo6?: string;
-  Photo7?: string;
-  [key: string]: any; // Allows passing complete dataset properties down to your component drawer safely
-}
-
-export type EnhancedBooking = Bookings & {
-  Type?: string;
-  PatientUsages: any[];
-  RelatedBookingSets: BookingSet[]; // Column 20: REF_ROWS("BookingSets", "BookingID")
-};
 
 function normalizeText(value: unknown): string {
   if (value === null || value === undefined) return '';
@@ -63,8 +41,8 @@ export async function fetchBookingsLog(): Promise<{ success: boolean; data: Enha
     const [bSetHeaders, ...bSetRows] = rawBookingSets;
 
     // Parse BookingSets sheet mapping precisely
-    const bookingSetsParsed = bSetRows.map(row => {
-      const obj: any = {};
+    const bookingSetsParsed = bSetRows.map((row: string[]) => {
+      const obj: Record<string, string> = {};
       bSetHeaders.forEach((h: string, i: number) => {
         // Normalize whitespaces or headers safely
         const key = h ? h.toString().trim() : '';
@@ -74,21 +52,21 @@ export async function fetchBookingsLog(): Promise<{ success: boolean; data: Enha
     });
 
     // Parse remaining support sets mapping
-    const usageItemsParsed = usageRows.map(row => {
-      const item: any = {};
+    const usageItemsParsed = usageRows.map((row: string[]) => {
+      const item: Record<string, string> = {};
       usageHeaders.forEach((h: string, i: number) => { item[h] = row[i] !== undefined ? row[i].toString().trim() : ''; });
       return item;
     });
 
-    const photosParsed = photoRows.map(row => {
-      const obj: any = {};
+    const photosParsed = photoRows.map((row: string[]) => {
+      const obj: Record<string, string> = {};
       photoHeaders.forEach((h: string, i: number) => { obj[h] = row[i] !== undefined ? row[i].toString().trim() : ''; });
       return obj;
     });
 
     const bookingsList: EnhancedBooking[] = bookingRows
       .map((row) => {
-        const item: any = {};
+        const item: Record<string, string> = {};
         bookingHeaders.forEach((h: string, i: number) => {
           item[h] = row[i] !== undefined ? row[i].toString().trim() : '';
         });
@@ -184,7 +162,7 @@ export async function fetchBookingsLog(): Promise<{ success: boolean; data: Enha
   }
 }
 
-async function getSheetRows(rangeName: string): Promise<any[]> {
+async function getSheetRows(rangeName: string): Promise<string[][]> {
   const auth = new google.auth.JWT({
     email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
     key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
