@@ -2,7 +2,11 @@
 
 import crypto from 'crypto';
 import { sheets, SPREADSHEET_ID } from '../lib/google-sheets';
+import { uploadPhotoToDrive } from '../lib/googleDrive';
 import type { UsageItemInput } from '../types/interfaces';
+
+// Folder ID from your Drive link
+const USAGE_IMAGES_FOLDER_ID = '1dAIcVsXX1llgMrqlT12YOtdizskGV5rg';
 
 function normalize(value: FormDataEntryValue | null): string {
   return String(value ?? '').trim();
@@ -22,7 +26,8 @@ export async function addBookingUsageAction(formData: FormData) {
     const hospital = normalize(formData.get('Hospital'));
     const date = normalize(formData.get('Date')) || new Date().toISOString().slice(0, 10);
     const notes = normalize(formData.get('Notes'));
-    const photo = normalize(formData.get('Photo'));
+    let photoPath = normalize(formData.get('Photo')); // Optional URL/text fallback
+    const photoFile = formData.get('PhotoFile') as File | null;
     const usageItemsJSON = normalize(formData.get('usage_items'));
 
     if (!bookingId || !setId || !patientMRN) {
@@ -37,6 +42,19 @@ export async function addBookingUsageAction(formData: FormData) {
       }
     } catch {
       return { success: false, error: 'Invalid usage items data format.' };
+    }
+
+    // 📸 Handle photo upload if a file is provided
+    if (photoFile && photoFile.size > 0) {
+      const timestamp = new Date().toTimeString().split(' ')[0].replace(/:/g, '');
+      const extension = photoFile.name.split('.').pop() || 'jpg';
+      const fileName = `${bookingId}.${setId}.${timestamp}.${extension}`;
+
+      // Upload via Apps Script bridge to avoid service account quota limits
+      await uploadPhotoToDrive(photoFile, fileName, USAGE_IMAGES_FOLDER_ID);
+
+      // Format AppSheet-compatible relative path
+      photoPath = `Usage_Images/${fileName}`;
     }
 
     const rows = usageItems
@@ -54,7 +72,7 @@ export async function addBookingUsageAction(formData: FormData) {
         hospital,
         String(item.qtyRefilled || 0),
         notes,
-        photo,
+        photoPath, // Saved relative path or custom URL
         item.itemId,
         new Date().toISOString(),
         '', // Set Delivery Note
@@ -67,9 +85,6 @@ export async function addBookingUsageAction(formData: FormData) {
       return { success: false, error: 'No valid usage items to save. Ensure at least one part has a quantity used greater than zero.' };
     }
 
-    // Do not use values.append here. Sheets can infer the wrong table when there
-    // are gaps or neighbouring values, which causes usage rows to be written away
-    // from column A. Find the next row ourselves and write the full A:S range.
     const existingUsageRows = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: 'Usage!A1:S',
