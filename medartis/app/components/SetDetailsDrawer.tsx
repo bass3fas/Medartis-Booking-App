@@ -1,10 +1,11 @@
 // app/components/SetDetailsDrawer.tsx
 'use client';
 
-import { useState, useEffect, Fragment } from 'react';
+import { useState, useEffect, Fragment, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { VirtualSet, fetchTraysAndUsageForSet, EnrichedTray, VirtualUsage } from '../actions/getSetsAction';
 import { buildAppSheetImageUrl } from '../lib/appsheet-image-url';
+import { EnhancedBooking, fetchBookingsLog } from '../actions/getBookingsAction';
 
 interface DrawerProps {
   set: VirtualSet | null;
@@ -14,9 +15,10 @@ interface DrawerProps {
 
 export default function SetDetailsDrawer({ set, isOpen, onClose }: DrawerProps) {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'trays' | 'history'>('trays');
+  const [activeTab, setActiveTab] = useState<'trays' | 'history' | 'bookings'>('trays');
   const [trays, setTrays] = useState<EnrichedTray[]>([]);
   const [setHistory, setSetHistory] = useState<VirtualUsage[]>([]);
+  const [relatedBookings, setRelatedBookings] = useState<EnhancedBooking[]>([]);
   const [loading, setLoading] = useState(false);
   const [openTrayId, setOpenTrayId] = useState<string | null>(null);
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
@@ -29,16 +31,29 @@ export default function SetDetailsDrawer({ set, isOpen, onClose }: DrawerProps) 
     if (!set || !isOpen) return;
     async function loadDataCascade() {
       setLoading(true);
-      const res = await fetchTraysAndUsageForSet(set!.SetID);
-      if (res.success) {
-        setTrays(res.trays);
-        setSetHistory(res.setHistory);
-        if (res.trays.length > 0) setOpenTrayId(res.trays[0].TrayID);
+      const [traysAndUsageRes, bookingsRes] = await Promise.all([
+        fetchTraysAndUsageForSet(set!.SetID),
+        fetchBookingsLog()
+      ]);
+
+      if (traysAndUsageRes.success) {
+        setTrays(traysAndUsageRes.trays);
+        setSetHistory(traysAndUsageRes.setHistory);
+        if (traysAndUsageRes.trays.length > 0) setOpenTrayId(traysAndUsageRes.trays[0].TrayID);
+      }
+
+      if (bookingsRes.success) {
+        const filteredBookings = bookingsRes.data.filter(booking =>
+          (booking['Selected Sets'] || '').split(',').map(s => s.trim()).includes(set!.SetID)
+        );
+        setRelatedBookings(filteredBookings);
       }
       setLoading(false);
     }
     loadDataCascade();
   }, [set, isOpen]);
+
+  const sortedRelatedBookings = useMemo(() => relatedBookings.sort((a, b) => new Date(b.CaseDate).getTime() - new Date(a.CaseDate).getTime()), [relatedBookings]);
 
   if (!isOpen || !set) return null;
 
@@ -130,6 +145,12 @@ export default function SetDetailsDrawer({ set, isOpen, onClose }: DrawerProps) 
               >
                 Set History Ledger ({setHistory.length})
               </button>
+              <button
+                onClick={() => setActiveTab('bookings')}
+                className={`tab tab-sm font-bold tracking-tight text-xs ${activeTab === 'bookings' ? 'tab-active bg-base-100 shadow-sm' : ''}`}
+              >
+                Related Bookings ({relatedBookings.length})
+              </button>
             </div>
           </div>
 
@@ -188,6 +209,54 @@ export default function SetDetailsDrawer({ set, isOpen, onClose }: DrawerProps) 
               <div className="flex flex-col items-center justify-center py-32 gap-2">
                 <span className="loading loading-ring loading-md text-primary"></span>
                 <span className="text-[10px] font-mono tracking-widest opacity-40 uppercase font-bold">Processing System Ledger...</span>
+              </div>
+            ) : activeTab === 'bookings' ? (
+              <div className="space-y-4">
+                <h3 className="text-xs uppercase font-mono tracking-wider opacity-60 font-black">Bookings Associated with this Set</h3>
+                {sortedRelatedBookings.length === 0 ? (
+                  <p className="text-xs opacity-40 italic text-center py-12">No bookings found for this set.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {sortedRelatedBookings.map((booking) => (
+                      <div key={booking.BookingID} className="p-3 bg-base-50 border border-base-200 rounded-lg text-xs flex justify-between items-center">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-bold text-base-content font-mono truncate">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onClose();
+                                router.push(`/bookings?bookingId=${encodeURIComponent(booking.BookingID)}`);
+                              }}
+                              className="text-primary hover:underline bg-transparent border-0 p-0 text-left outline-none"
+                              title="Click to view this booking on the Bookings page"
+                            >
+                              {booking.BookingID}
+                            </button>
+                          </p>
+                          <div className="flex items-center gap-2 text-[10px] font-mono mt-1 text-base-content/50 select-text flex-wrap">
+                            <span>Hospital: {booking.Hospital}</span>
+                            <span>|</span>
+                            <span>Date: {booking.CaseDate}</span>
+                            <span>|</span>
+                            <span>Doctor: {booking.Doctor}</span>
+                          </div>
+                        </div>
+                        <div className="text-right ml-4 flex-shrink-0">
+                          <span className={`badge badge-sm font-mono font-bold ${
+                            booking.Status === 'Returned' ? 'badge-success' :
+                            booking.Status === 'Used' || booking.Status === 'Usage Received' ? 'badge-info' :
+                            booking.Status === 'Delivered' ? 'badge-primary' :
+                            booking.Status === 'Confirmed' ? 'badge-warning' :
+                            'badge-ghost'
+                          }`}>
+                            {booking.Status}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ) : activeTab === 'history' ? (
               
