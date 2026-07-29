@@ -184,6 +184,18 @@ export default function BookingsDashboardPage() {
       && matchesWeekday;
   });
 
+  const resetFilters = () => {
+    setSearchQuery('');
+    setHospitalFilter('all');
+    setSalesPersonFilter('all');
+    setStatusFilter('all');
+    setTypeFilter('all');
+    setGapFilter('all');
+    setWeekdayFilter('all');
+    setFromDate('');
+    setToDate('');
+  };
+
   function toTimestamp(b: any): number {
     const datePart = b.CaseDate || b.Date || '';
     const timePart = b.CaseTime || '00:00';
@@ -309,105 +321,109 @@ export default function BookingsDashboardPage() {
       )}
 
       {/* Filter Controls Panel */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6 p-4 bg-base-100 border border-base-300 rounded-xl shadow-sm">
-        <div className="flex flex-col gap-1">
-          <label className="text-[10px] font-mono uppercase opacity-50 font-bold">Search Metadata</label>
-          <input 
-            type="text" 
-            placeholder="Booking ID, Surgeon, MRN..." 
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="input input-sm input-bordered font-semibold text-xs bg-base-50 focus:outline-none w-full"
-          />
-        </div>
-        
-        <div className="flex flex-col gap-1">
-          <label className="text-[10px] font-mono uppercase opacity-50 font-bold">Case Intent Type</label>
-          <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="select select-sm select-bordered font-semibold text-xs bg-base-50 w-full">
-            <option value="all">All Types</option>
-            <option value="empty">Standard / Empty</option>
-            <option value="longterm">LONGTERM</option>
-            <option value="demo">Demo</option>
-            <option value="removal">Removal</option>
-            <option value="canceled">Canceled</option>
-          </select>
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <label className="text-[10px] font-mono uppercase opacity-50 font-bold">Log Status</label>
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="select select-sm select-bordered font-semibold text-xs bg-base-50 w-full">
-            <option value="all">All Lifecycles</option>
-            <option value="pending">Pending</option>
-            <option value="confirmed">Confirmed</option>
-            <option value="delivered">Delivered</option>
-            <option value="used">Used</option>
-            <option value="returned">Returned</option>
-          </select>
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <label className="text-[10px] font-mono uppercase opacity-50 font-bold">Hospital</label>
-          <select value={hospitalFilter} onChange={(e) => setHospitalFilter(e.target.value)} className="select select-sm select-bordered font-semibold text-xs bg-base-50 w-full">
-            <option value="all">All Hospitals ({uniqueHospitals.length})</option>
-            {uniqueHospitals.map(h => <option key={h} value={h}>{h}</option>)}
-          </select>
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <label className="text-[10px] font-mono uppercase opacity-50 font-bold">Sales Specialist</label>
-          <select value={salesPersonFilter} onChange={(e) => setSalesPersonFilter(e.target.value)} className="select select-sm select-bordered font-semibold text-xs bg-base-50 w-full">
-            <option value="all">All Field Reps ({uniqueSalesPeople.length})</option>
-            {uniqueSalesPeople.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <label className="text-[10px] font-mono uppercase opacity-50 font-bold">Data Gaps</label>
-          <select value={gapFilter} onChange={(e) => setGapFilter(e.target.value)} className="select select-sm select-bordered font-semibold text-xs bg-base-50 w-full">
-            <option value="all">All Records</option>
-            <option value="no_mrn">No MRN</option>
-            <option value="no_usage">No Usage Items</option>
-            
-          </select>
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <label className="text-[10px] font-mono uppercase opacity-50 font-bold">Day of Week</label>
-          <select value={weekdayFilter} onChange={(e) => setWeekdayFilter(e.target.value)} className="select select-sm select-bordered font-semibold text-xs bg-base-50 w-full">
-            <option value="all">Any Day</option>
-            <option value="Monday">Monday</option>
-            <option value="Tuesday">Tuesday</option>
-            <option value="Wednesday">Wednesday</option>
-            <option value="Thursday">Thursday</option>
-            <option value="Friday">Friday</option>
-            <option value="Saturday">Saturday</option>
-            <option value="Sunday">Sunday</option>
-          </select>
-        </div>
-
-        <div className="flex flex-col gap-1 lg:col-span-2">
-          <label className="text-[10px] font-mono uppercase opacity-50 font-bold">Date Range (From → To)</label>
-          <div className="grid grid-cols-2 gap-2">
+      <div className="p-4 bg-base-100 border border-base-300 rounded-xl mb-8 shadow-sm flex flex-col gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+          <div className="form-control w-full sm:col-span-2 lg:col-span-4 xl:col-span-1">
+            <label className="label py-1 text-[10px] uppercase font-mono font-bold opacity-50">Search Metadata</label>
             <input 
-              type="date" 
-              value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
-              className="input input-sm input-bordered font-semibold text-xs bg-base-50 focus:outline-none w-full"
-            />
-            <input 
-              type="date" 
-              value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
+              type="text" 
+              placeholder="Booking ID, Surgeon, MRN..." 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
               className="input input-sm input-bordered font-semibold text-xs bg-base-50 focus:outline-none w-full"
             />
           </div>
-        </div>
-      </div>
+          
+          <div className="form-control w-full">
+            <label className="label py-1 text-[10px] uppercase font-mono font-bold opacity-50">Case Intent Type</label>
+            <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="select select-sm select-bordered font-semibold text-xs bg-base-50 w-full">
+              <option value="all">All Types</option>
+              <option value="empty">Standard / Empty</option>
+              <option value="longterm">LONGTERM</option>
+              <option value="demo">Demo</option>
+              <option value="removal">Removal</option>
+              <option value="canceled">Canceled</option>
+            </select>
+          </div>
 
-      <div className="mb-2 text-right">
-        <span className="text-[10px] font-mono bg-base-200 text-base-content/70 px-2 py-1 rounded-md font-bold">
-          Showing {sortedBookings.length} of {totalCount} total bookings
-        </span>
+          <div className="form-control w-full">
+            <label className="label py-1 text-[10px] uppercase font-mono font-bold opacity-50">Log Status</label>
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="select select-sm select-bordered font-semibold text-xs bg-base-50 w-full">
+              <option value="all">All Lifecycles</option>
+              <option value="pending">Pending</option>
+              <option value="confirmed">Confirmed</option>
+              <option value="delivered">Delivered</option>
+              <option value="used">Used</option>
+              <option value="returned">Returned</option>
+            </select>
+          </div>
+
+          <div className="form-control w-full">
+            <label className="label py-1 text-[10px] uppercase font-mono font-bold opacity-50">Hospital</label>
+            <select value={hospitalFilter} onChange={(e) => setHospitalFilter(e.target.value)} className="select select-sm select-bordered font-semibold text-xs bg-base-50 w-full">
+              <option value="all">All Hospitals ({uniqueHospitals.length})</option>
+              {uniqueHospitals.map(h => <option key={h} value={h}>{h}</option>)}
+            </select>
+          </div>
+
+          <div className="form-control w-full">
+            <label className="label py-1 text-[10px] uppercase font-mono font-bold opacity-50">Sales Specialist</label>
+            <select value={salesPersonFilter} onChange={(e) => setSalesPersonFilter(e.target.value)} className="select select-sm select-bordered font-semibold text-xs bg-base-50 w-full">
+              <option value="all">All Field Reps ({uniqueSalesPeople.length})</option>
+              {uniqueSalesPeople.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+
+          <div className="form-control w-full">
+            <label className="label py-1 text-[10px] uppercase font-mono font-bold opacity-50">Data Gaps</label>
+            <select value={gapFilter} onChange={(e) => setGapFilter(e.target.value)} className="select select-sm select-bordered font-semibold text-xs bg-base-50 w-full">
+              <option value="all">All Records</option>
+              <option value="no_mrn">No MRN</option>
+              <option value="no_usage">No Usage Items</option>
+            </select>
+          </div>
+
+          <div className="form-control w-full">
+            <label className="label py-1 text-[10px] uppercase font-mono font-bold opacity-50">Day of Week</label>
+            <select value={weekdayFilter} onChange={(e) => setWeekdayFilter(e.target.value)} className="select select-sm select-bordered font-semibold text-xs bg-base-50 w-full">
+              <option value="all">Any Day</option>
+              <option value="Monday">Monday</option>
+              <option value="Tuesday">Tuesday</option>
+              <option value="Wednesday">Wednesday</option>
+              <option value="Thursday">Thursday</option>
+              <option value="Friday">Friday</option>
+              <option value="Saturday">Saturday</option>
+              <option value="Sunday">Sunday</option>
+            </select>
+          </div>
+
+          <div className="form-control w-full sm:col-span-2 lg:col-span-3 xl:col-span-2">
+            <label className="label py-1 text-[10px] uppercase font-mono font-bold opacity-50">Date Range (From → To)</label>
+            <div className="grid grid-cols-2 gap-2">
+              <input 
+                type="date" 
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+                className="input input-sm input-bordered font-semibold text-xs bg-base-50 focus:outline-none w-full"
+              />
+              <input 
+                type="date" 
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+                className="input input-sm input-bordered font-semibold text-xs bg-base-50 focus:outline-none w-full"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-between items-center border-t border-base-200 pt-3 mt-1 text-xs">
+          <span className="font-mono text-[11px] opacity-60">
+            Showing <strong className="text-primary">{sortedBookings.length}</strong> of {totalCount} bookings
+          </span>
+          <button onClick={resetFilters} className="btn btn-ghost btn-xs text-error font-bold tracking-tight normal-case hover:bg-error/10">
+            Clear Active Filters
+          </button>
+        </div>
       </div>
 
       {loading ? (
