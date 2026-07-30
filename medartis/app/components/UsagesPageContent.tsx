@@ -28,13 +28,19 @@ export default function GroupedUsageLogPage() {
   const [expandedCaseKey, setExpandedCaseKey] = useState<string | null>(null);
   const [editingUsage, setEditingUsage] = useState<EnrichedUsage | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState('');
+  const [currentUserName, setCurrentUserName] = useState('');
   const [isDeleting, startDeleteTransition] = useTransition();
   const [bookings, setBookings] = useState<EnhancedBooking[]>([]);
   const [availableSets, setAvailableSets] = useState<VirtualSet[]>([]);
   const [isBookingPickerOpen, setIsBookingPickerOpen] = useState(false);
   const [usageBooking, setUsageBooking] = useState<EnhancedBooking | null>(null);
 
-  const canManageUsage = ['admin', 'warehouse'].includes(currentUserRole.trim().toLowerCase());
+  const canManageCase = (bookingId: string) => {
+    const role = currentUserRole.trim().toLowerCase();
+    if (role === 'admin' || role === 'warehouse') return true;
+    if (role === 'sales') return bookings.find((booking) => booking.BookingID === bookingId)?.Salesperson?.trim().toLowerCase() === currentUserName.trim().toLowerCase();
+    return false;
+  };
 
   const syncLedger = useCallback(async () => {
     setLoading(true);
@@ -59,6 +65,7 @@ export default function GroupedUsageLogPage() {
     try {
       const session = JSON.parse(localStorage.getItem('medartis_session_token') || '{}');
       setCurrentUserRole(session.role || '');
+      setCurrentUserName(session.name || '');
     } catch { setCurrentUserRole(''); }
   }, [syncLedger]);
 
@@ -68,6 +75,7 @@ export default function GroupedUsageLogPage() {
       const formData = new FormData();
       formData.set('UsageID', usageId);
       formData.set('currentUserRole', currentUserRole);
+      formData.set('currentUserName', currentUserName);
       const result = await deleteUsageAction(formData);
       if (result.success) await syncLedger();
       else setErrorMessage(result.error || 'Could not delete usage.');
@@ -81,6 +89,7 @@ export default function GroupedUsageLogPage() {
       const formData = new FormData();
       formData.set('UsageIDs', JSON.stringify(usageIds));
       formData.set('currentUserRole', currentUserRole);
+      formData.set('currentUserName', currentUserName);
       const result = await refillUsageAction(formData);
       if (result.success) await syncLedger();
       else setErrorMessage(result.error || 'Could not refill usage.');
@@ -218,7 +227,7 @@ export default function GroupedUsageLogPage() {
                     
                     {/* LEFT PANEL: Consumption Table Ledger Rows */}
                     <div className="lg:col-span-7 space-y-2">
-                      <div className="flex items-center justify-between gap-3"><p className="text-[10px] font-mono uppercase font-black opacity-40 tracking-wider">Consumed Implant Element Specifications</p>{canManageUsage && <button type="button" onClick={() => refillUsage(cases.filter((group) => group.PatientMRN === caseGroup.PatientMRN).flatMap((group) => group.items).filter((item) => item.computedUsageStatus !== 'Refilled').map((item) => item.UsageID))} disabled={isDeleting || !cases.some((group) => group.PatientMRN === caseGroup.PatientMRN && group.items.some((item) => item.computedUsageStatus !== 'Refilled'))} className="btn btn-outline btn-success btn-xs">Refill all MRN</button>}</div>
+                      <div className="flex items-center justify-between gap-3"><p className="text-[10px] font-mono uppercase font-black opacity-40 tracking-wider">Consumed Implant Element Specifications</p>{canManageCase(caseGroup.BookingID) && <button type="button" onClick={() => refillUsage(cases.filter((group) => group.PatientMRN === caseGroup.PatientMRN).flatMap((group) => group.items).filter((item) => item.computedUsageStatus !== 'Refilled').map((item) => item.UsageID))} disabled={isDeleting || !cases.some((group) => group.PatientMRN === caseGroup.PatientMRN && group.items.some((item) => item.computedUsageStatus !== 'Refilled'))} className="btn btn-outline btn-success btn-xs">Refill all MRN</button>}</div>
                       <div className="border border-base-300 rounded-xl overflow-hidden bg-base-100 max-h-72 overflow-y-auto shadow-sm">
                         <table className="table table-compact w-full text-xs font-mono">
                           <thead className="bg-base-100 border-b opacity-60 text-[10px] uppercase font-black">
@@ -227,7 +236,7 @@ export default function GroupedUsageLogPage() {
                               <th className="text-right">Used</th>
                               <th className="text-right">Refilled</th>
                               <th className="text-right">Status</th>
-                              {canManageUsage && <th className="text-right">Actions</th>}
+                              {canManageCase(caseGroup.BookingID) && <th className="text-right">Actions</th>}
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-base-100">
@@ -249,7 +258,7 @@ export default function GroupedUsageLogPage() {
                                     {item.computedUsageStatus}
                                   </span>
                                 </td>
-                                {canManageUsage && <td className="text-right whitespace-nowrap"><button type="button" onClick={() => refillUsage([item.UsageID])} disabled={isDeleting || item.computedUsageStatus === 'Refilled'} className="btn btn-ghost btn-xs text-success">Refill</button><button type="button" onClick={() => setEditingUsage(item)} className="btn btn-ghost btn-xs text-primary">Edit</button><button type="button" onClick={() => deleteUsage(item.UsageID)} disabled={isDeleting} className="btn btn-ghost btn-xs text-error">Delete</button></td>}
+                                {canManageCase(caseGroup.BookingID) && <td className="text-right whitespace-nowrap"><button type="button" onClick={() => refillUsage([item.UsageID])} disabled={isDeleting || item.computedUsageStatus === 'Refilled'} className="btn btn-ghost btn-xs text-success">Refill</button><button type="button" onClick={() => setEditingUsage(item)} className="btn btn-ghost btn-xs text-primary">Edit</button><button type="button" onClick={() => deleteUsage(item.UsageID)} disabled={isDeleting} className="btn btn-ghost btn-xs text-error">Delete</button></td>}
                               </tr>
                             ))}
                           </tbody>
@@ -300,9 +309,9 @@ export default function GroupedUsageLogPage() {
           })}
         </div>
       )}
-      <EditUsageModal usage={editingUsage} booking={bookings.find((booking) => booking.BookingID === editingUsage?.BookingID) || null} currentUserRole={currentUserRole} onClose={() => setEditingUsage(null)} onSuccess={syncLedger} />
+      <EditUsageModal usage={editingUsage} booking={bookings.find((booking) => booking.BookingID === editingUsage?.BookingID) || null} currentUserRole={currentUserRole} currentUserName={currentUserName} onClose={() => setEditingUsage(null)} onSuccess={syncLedger} />
       {isBookingPickerOpen && <SelectBookingForUsageModal bookings={bookings} onClose={() => setIsBookingPickerOpen(false)} onSelect={(booking) => { setUsageBooking(booking); setIsBookingPickerOpen(false); }} />}
-      <AddUsageModal isOpen={Boolean(usageBooking)} booking={usageBooking} availableSets={availableSets} onClose={() => setUsageBooking(null)} onSuccess={syncLedger} />
+      <AddUsageModal isOpen={Boolean(usageBooking)} booking={usageBooking} availableSets={availableSets} onClose={() => setUsageBooking(null)} onSuccess={syncLedger} currentUserName={currentUserName} currentUserRole={currentUserRole} />
     </div>
   );
 }

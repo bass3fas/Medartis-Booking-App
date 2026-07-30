@@ -13,6 +13,8 @@ interface AddUsageModalProps {
   booking: EnhancedBooking | null;
   availableSets: VirtualSet[];
   initialSetId?: string;
+  currentUserName?: string;
+  currentUserRole?: string;
 }
 
 interface UsageItem {
@@ -63,7 +65,7 @@ async function compressImage(file: File, maxWidth = 1600, quality = 0.75): Promi
   });
 }
 
-export default function AddUsageModal({ isOpen, onClose, onSuccess, booking, availableSets, initialSetId }: AddUsageModalProps) {
+export default function AddUsageModal({ isOpen, onClose, onSuccess, booking, availableSets, initialSetId, currentUserName = '', currentUserRole = '' }: AddUsageModalProps) {
   const [isPending, startTransition] = useTransition();
   const [isLoadingSet, setIsLoadingSet] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -152,9 +154,8 @@ export default function AddUsageModal({ isOpen, onClose, onSuccess, booking, ava
     event.preventDefault();
     const patientMRN = newMrn.trim() || selectedMrn;
 
-    if (!booking || !patientMRN) {
-      return setError('Please enter or select a patient MRN.');
-    }
+    if (!booking) return;
+
 
     const hasPhoto = Boolean(selectedFile);
     const hasItems = usageItems.length > 0 && usageItems.some(i => i.partNumber && i.qtyUsed > 0);
@@ -172,6 +173,8 @@ export default function AddUsageModal({ isOpen, onClose, onSuccess, booking, ava
     formData.set('SetID', selectedSetId);
     formData.set('PatientMRN', patientMRN);
     formData.set('Hospital', booking.Hospital || '');
+    formData.set('currentUserName', currentUserName);
+    formData.set('currentUserRole', currentUserRole);
     formData.set('usage_items', JSON.stringify(usageItems));
 
     if (selectedFile) {
@@ -210,10 +213,10 @@ export default function AddUsageModal({ isOpen, onClose, onSuccess, booking, ava
             <section className="rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
               <div className="mb-4">
                 <h3 className="text-sm font-black">Case details</h3>
-                <p className="text-xs text-base-content/55">Select MRN, date, photo, or set details.</p>
+                <p className="text-xs text-base-content/55">Upload a booking photo immediately, or assign an MRN to file it as a Usage Photos record.</p>
               </div>
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <label className="form-control"><span className="label-text mb-1 text-xs font-bold">Patient MRN</span><select className="select select-bordered" value={selectedMrn} onChange={(e) => setSelectedMrn(e.target.value)}><option value="">Choose existing MRN</option>{patientMRNOptions.map((mrn) => <option key={mrn} value={mrn}>{mrn}</option>)}</select></label>
+                <label className="form-control"><span className="label-text mb-1 text-xs font-bold">Patient MRN (optional for photo-only)</span><select className="select select-bordered" value={selectedMrn} onChange={(e) => setSelectedMrn(e.target.value)}><option value="">Choose existing MRN</option>{patientMRNOptions.map((mrn) => <option key={mrn} value={mrn}>{mrn}</option>)}</select></label>
                 <label className="form-control"><span className="label-text mb-1 text-xs font-bold">New patient MRN</span><input className="input input-bordered" value={newMrn} onChange={(e) => setNewMrn(e.target.value)} placeholder="Add new MRN" /></label>
                 <label className="form-control"><span className="label-text mb-1 text-xs font-bold">Used set (optional for photo only)</span><select className="select select-bordered" value={selectedSetId} onChange={(e) => setSelectedSetId(e.target.value)}><option value="">Choose set</option>{setOptions.map((set) => <option key={set.SetID} value={set.SetID}>{set.SetID}</option>)}</select></label>
                 <label className="form-control"><span className="label-text mb-1 text-xs font-bold">Usage date</span><input type="date" name="Date" className="input input-bordered" defaultValue={new Date().toISOString().slice(0, 10)} required /></label>

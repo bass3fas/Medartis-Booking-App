@@ -143,6 +143,8 @@ export async function fetchBookingsLog(): Promise<{ success: boolean; data: Enha
           "Selected Sets": item["Selected Sets"] || '',
           "Last Updated": item["Last Updated"] || '',
           Driver: item.Driver || '',
+          UsagePhoto: item.UsagePhoto || '',
+          UsagePhoto2: item.UsagePhoto2 || '',
           "Patient MRN": getBookingFieldValue(item, ['Patient MRN', 'PatientMRN', 'patient MRN', 'patientmrn']),
           "Delivery Note": item["Delivery Note"] || '',
           "Delivery Note Link": item["Delivery Note Link"] || '',

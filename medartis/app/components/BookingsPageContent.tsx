@@ -15,6 +15,7 @@ import SetDetailsDrawer from './SetDetailsDrawer';
 import { fetchEnrichedSets } from '../actions/getSetsAction';
 import type { VirtualSet } from '../types/interfaces';
 import { deleteBookingSetPhotoAction } from '../actions/bookingMutationsAction';
+import { assignBookingUsagePhotoAction } from '../actions/usageMutationsAction';
 import { buildAppSheetImageUrl } from '../lib/appsheet-image-url';
 import type { BookingSet } from '../types/interfaces';
 
@@ -137,6 +138,17 @@ export default function BookingsDashboardPage() {
     return buildAppSheetImageUrl(fileName, 'BookingSets');
   }
 
+  function buildBookingUsageImageUrl(fileName: string): string {
+    return buildAppSheetImageUrl(fileName, 'Bookings');
+  }
+
+  function getBookingUsagePhotos(booking: EnhancedBooking): string[] {
+    return [booking.UsagePhoto, booking.UsagePhoto2]
+      .flatMap((value) => (value || '').split(','))
+      .map((value) => value.trim())
+      .filter(Boolean);
+  }
+
   function getWeekdayString(b: EnhancedBooking): string {
     const date = new Date(b.CaseDate);
     if (isNaN(date.getTime())) return '';
@@ -255,6 +267,21 @@ export default function BookingsDashboardPage() {
 
   const handleOpenUsageModal = (booking: EnhancedBooking, initialSetId?: string) => {
     setUsageModalState({ isOpen: true, booking, initialSetId });
+  };
+
+  const handleAssignBookingUsagePhoto = async (booking: EnhancedBooking, photo: string) => {
+    const patientMRN = window.prompt('Enter Patient MRN for this usage photo:')?.trim();
+    if (!patientMRN) return;
+    const formData = new FormData();
+    formData.set('BookingID', booking.BookingID);
+    formData.set('PatientMRN', patientMRN);
+    formData.set('Photo', photo);
+    formData.set('Date', booking.CaseDate || new Date().toISOString().slice(0, 10));
+    formData.set('currentUserName', currentUserName);
+    formData.set('currentUserRole', currentUserRole);
+    const result = await assignBookingUsagePhotoAction(formData);
+    if (result.success) initPage();
+    else alert(result.error || 'Could not assign usage photo.');
   };
 
   const handleDeleteSetPhoto = async (bookingId: string, setId: string, photoFileName: string) => {
@@ -714,6 +741,25 @@ export default function BookingsDashboardPage() {
                                   </div>
                                 </div>
 
+
+                                {getBookingUsagePhotos(booking).length > 0 && (
+                                  <div className="mb-3 rounded-xl border border-base-200 bg-base-100 p-3">
+                                    <p className="mb-2 text-[10px] font-mono font-black uppercase tracking-wider text-base-content/50">Unassigned booking usage photos</p>
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                      {getBookingUsagePhotos(booking).map((photo) => (
+                                        <div key={photo}>
+                                          <a href={buildBookingUsageImageUrl(photo)} target="_blank" rel="noreferrer" className="group block aspect-[1/1.414] overflow-hidden rounded-lg border border-base-300 bg-base-200">
+                                            <img src={buildBookingUsageImageUrl(photo)} alt={`Unassigned usage photo ${photo}`} className="h-full w-full object-contain p-1 transition-transform group-hover:scale-105" />
+                                          </a>
+                                          {canEditBooking(booking) && (
+                                            <button type="button" onClick={() => handleAssignBookingUsagePhoto(booking, photo)} className="btn btn-primary btn-xs mt-1 w-full">Assign MRN</button>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+
                               {/* MRN Navigation Tab List */}
                               <div className="flex flex-wrap gap-1.5 border-b border-base-200 pb-2 mb-3">
                                 {booking.PatientUsages.map((pu) => {
@@ -985,6 +1031,8 @@ export default function BookingsDashboardPage() {
         booking={usageModalState.booking}
         availableSets={availableSets}
         initialSetId={usageModalState.initialSetId}
+        currentUserName={currentUserName}
+        currentUserRole={currentUserRole}
       />
       <AddSetPhotoModal
         bookingId={setPhotoTarget?.bookingId || null}
