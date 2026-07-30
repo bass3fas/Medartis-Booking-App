@@ -7,7 +7,7 @@ import type { EnrichedTray } from '../types/interfaces';
 import type { EnhancedBooking } from '../types/interfaces';
 import type { EnrichedUsage } from '../types/interfaces';
 
-interface Props { usage: EnrichedUsage | null; booking: EnhancedBooking | null; currentUserRole: string; onClose: () => void; onSuccess: () => void; }
+interface Props { usage: EnrichedUsage | null; booking: EnhancedBooking | null; currentUserRole: string; currentUserName?: string; onClose: () => void; onSuccess: () => void; }
 const split = (value?: string) => (value || '').split(',').map((item) => item.trim()).filter(Boolean);
 const inputDate = (value?: string) => {
   const raw = String(value || '').trim();
@@ -16,7 +16,7 @@ const inputDate = (value?: string) => {
   return Number.isNaN(parsed.getTime()) ? '' : parsed.toISOString().slice(0, 10);
 };
 
-export default function EditUsageModal({ usage, booking, currentUserRole, onClose, onSuccess }: Props) {
+export default function EditUsageModal({ usage, booking, currentUserRole, currentUserName = '', onClose, onSuccess }: Props) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState('');
   const [isLoadingTrays, setIsLoadingTrays] = useState(false);
@@ -59,6 +59,7 @@ export default function EditUsageModal({ usage, booking, currentUserRole, onClos
     const formData = new FormData(event.currentTarget);
     formData.set('UsageID', usage.UsageID);
     formData.set('currentUserRole', currentUserRole);
+    formData.set('currentUserName', currentUserName);
     formData.set('SetID', setId);
     formData.set('TrayID', trayId);
     formData.set('PartNumber', partNumber);

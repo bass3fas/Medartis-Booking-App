@@ -8,6 +8,7 @@ import type { UsageItemInput } from '../types/interfaces';
 
 // Usage images folder ID from your Google Drive
 const USAGE_IMAGES_FOLDER_ID = '1dAIcVsXX1llgMrqlT12YOtdizskGV5rg';
+const BOOKING_USAGE_IMAGES_FOLDER_ID = '1p1sB99xNT5c0bYV_ftw7LpZF7QzT1cdU';
 
 function normalize(value: FormDataEntryValue | null): string {
   return String(value ?? '').trim();
@@ -17,6 +18,36 @@ function newUsageId() {
   return `U-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
 }
 
+function canManageBooking(booking: Record<string, string>, userName: string, role: string): boolean {
+  const normalizedRole = role.trim().toLowerCase();
+  if (normalizedRole === 'admin' || normalizedRole === 'warehouse') return true;
+  if (normalizedRole === 'sales') return String(booking.Salesperson || '').trim().toLowerCase() === userName.trim().toLowerCase();
+  return false;
+}
+
+async function findBookingRow(bookingId: string) {
+  const response = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: 'Bookings!A1:Z' });
+  const [headers = [], ...rows] = response.data.values || [];
+  const bookingIdColumn = headers.indexOf('BookingID');
+  if (bookingIdColumn === -1) throw new Error('Bookings sheet is missing its BookingID column.');
+  const rowOffset = rows.findIndex((row) => String(row[bookingIdColumn] || '').trim().toUpperCase() === bookingId.trim().toUpperCase());
+  if (rowOffset === -1) throw new Error(`Booking ${bookingId} was not found.`);
+  const row = rows[rowOffset];
+  const booking = headers.reduce<Record<string, string>>((acc, header, index) => { acc[header] = String(row[index] || '').trim(); return acc; }, {});
+  return { headers, row, rowNumber: rowOffset + 2, booking };
+}
+
+function columnLetter(index: number): string {
+  let dividend = index + 1;
+  let column = '';
+  while (dividend > 0) {
+    const modulo = (dividend - 1) % 26;
+    column = String.fromCharCode(65 + modulo) + column;
+    dividend = Math.floor((dividend - modulo) / 26);
+  }
+  return column;
+}
+
 export async function addBookingUsageAction(formData: FormData) {
   try {
     if (!SPREADSHEET_ID) {
@@ -24,6 +55,8 @@ export async function addBookingUsageAction(formData: FormData) {
     }
 
     const bookingId = normalize(formData.get('BookingID'));
+    const currentUserName = normalize(formData.get('currentUserName'));
+    const currentUserRole = normalize(formData.get('currentUserRole'));
     const setId = normalize(formData.get('SetID'));
     const patientMRN = normalize(formData.get('PatientMRN'));
     const hospital = normalize(formData.get('Hospital'));
@@ -33,8 +66,13 @@ export async function addBookingUsageAction(formData: FormData) {
     const photoFile = formData.get('PhotoFile') as File | null;
     const usageItemsJSON = normalize(formData.get('usage_items'));
 
-    if (!bookingId || !patientMRN) {
-      return { success: false, error: 'Booking ID and Patient MRN are required.' };
+    if (!bookingId) {
+      return { success: false, error: 'Booking ID is required.' };
+    }
+
+    const { headers: bookingHeaders, row: bookingRow, rowNumber: bookingRowNumber, booking } = await findBookingRow(bookingId);
+    if (!canManageBooking(booking, currentUserName, currentUserRole)) {
+      return { success: false, error: 'You do not have permission to add usage photos or usage rows for this booking.' };
     }
 
     // Parse items (optional if uploading ONLY a photo)
@@ -54,46 +92,39 @@ export async function addBookingUsageAction(formData: FormData) {
       return { success: false, error: 'Please either attach a photo or add at least one used part.' };
     }
 
-    // 📸 1. Process & Upload Photo if present
+    // 📸 1. Process & Upload Photo if present. MRN-less photos stay on the booking until edited/assigned.
     if (hasPhoto && photoFile) {
       const timestamp = new Date().toTimeString().split(' ')[0].replace(/:/g, '');
       const extension = photoFile.name.split('.').pop() || 'jpg';
-      
-      // Sanitize MRN for file system safety (e.g. replacing slashes/colons)
-      const sanitizedMrn = patientMRN.replace(/[:\/]/g, '-');
-      const fileName = `${sanitizedMrn}.Photo.${timestamp}.${extension}`;
+      const safeBookingId = bookingId.replace(/[^a-zA-Z0-9_-]/g, '-');
+      const sanitizedMrn = patientMRN.replace(/[^a-zA-Z0-9_-]/g, '-');
+      const fileName = patientMRN
+        ? `${sanitizedMrn}.Photo.${timestamp}.${extension}`
+        : `${safeBookingId}.UsagePhoto.${timestamp}.${extension}`;
 
-      // Upload file to Drive via Apps Script bridge
-      await uploadPhotoToDrive(photoFile, fileName, USAGE_IMAGES_FOLDER_ID);
+      if (patientMRN) {
+        await uploadPhotoToDrive(photoFile, fileName, USAGE_IMAGES_FOLDER_ID);
+        photoPath = `Usage Photos_Images/${fileName}`;
 
-      // Match AppSheet relative path naming: Usage Photos_Images/MRN.Photo.104457.jpg
-      photoPath = `Usage Photos_Images/${fileName}`;
-
-      // 📝 Write record into "Usage Photo" sheet: [MRN, Photo, BookingID, Date]
-      const photoRow = [
-        patientMRN,
-        photoPath,
-        bookingId,
-        date,
-      ];
-
-      const existingPhotoRows = await sheets.spreadsheets.values.get({
-        spreadsheetId: SPREADSHEET_ID,
-        range: "'Usage Photos'!A1:D",
-      });
-      const photoRows = existingPhotoRows.data.values || [];
-      const photoTargetRow = Math.max(2, photoRows.length + 1);
-
-      await sheets.spreadsheets.values.update({
-        spreadsheetId: SPREADSHEET_ID,
-        range: `'Usage Photos'!A${photoTargetRow}:D${photoTargetRow}`,
-        valueInputOption: 'USER_ENTERED',
-        requestBody: { values: [photoRow] },
-      });
+        const photoRow = [patientMRN, photoPath, bookingId, date];
+        const existingPhotoRows = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: "'Usage Photos'!A1:D" });
+        const photoRows = existingPhotoRows.data.values || [];
+        const photoTargetRow = Math.max(2, photoRows.length + 1);
+        await sheets.spreadsheets.values.update({ spreadsheetId: SPREADSHEET_ID, range: `'Usage Photos'!A${photoTargetRow}:D${photoTargetRow}`, valueInputOption: 'USER_ENTERED', requestBody: { values: [photoRow] } });
+      } else {
+        await uploadPhotoToDrive(photoFile, fileName, BOOKING_USAGE_IMAGES_FOLDER_ID);
+        photoPath = `Bookings_Images/${fileName}`;
+        const usagePhotoColumn = bookingHeaders.indexOf('UsagePhoto');
+        if (usagePhotoColumn === -1) throw new Error('Bookings sheet is missing its UsagePhoto column.');
+        const existingPhotos = String(bookingRow[usagePhotoColumn] || '').split(',').map((value) => value.trim()).filter(Boolean);
+        const nextPhotos = Array.from(new Set([...existingPhotos, photoPath]));
+        await sheets.spreadsheets.values.update({ spreadsheetId: SPREADSHEET_ID, range: `Bookings!${columnLetter(usagePhotoColumn)}${bookingRowNumber}`, valueInputOption: 'USER_ENTERED', requestBody: { values: [[nextPhotos.join(', ')]] } });
+      }
     }
 
     // 📦 2. Process Part Consumption into "Usage" sheet (if items were submitted)
     if (validUsageItems.length > 0 && setId) {
+      if (!patientMRN) return { success: false, error: 'Patient MRN is required when saving consumed parts.' };
       const rows = validUsageItems.map(item => [
         newUsageId(),
         bookingId,

@@ -89,3 +89,28 @@ export async function deletePhotoFromDrive(fileIdOrUrl: string) {
     throw new Error(`Google Drive deletion failed: ${error.message}`);
   }
 }
+export async function copyPhotoInDrive(fileNameOrPath: string, newFileName: string, targetFolderId: string) {
+  const webAppUrl = process.env.GOOGLE_APPS_SCRIPT_URL;
+  if (!webAppUrl) {
+    throw new Error('GOOGLE_APPS_SCRIPT_URL is not defined in environment variables.');
+  }
+
+  const sourceFileName = fileNameOrPath.split('/').pop() || fileNameOrPath;
+  const response = await fetch(webAppUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'copy',
+      sourceFileName,
+      fileName: newFileName,
+      folderId: targetFolderId,
+    }),
+  });
+
+  const data = await response.json();
+  if (!data.success) {
+    throw new Error(data.error || 'Apps Script failed to copy image.');
+  }
+
+  return { id: data.fileId, name: newFileName, webViewLink: data.url };
+}
