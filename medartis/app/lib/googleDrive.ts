@@ -46,34 +46,42 @@ export async function uploadPhotoToDrive(file: File, fileName: string, parentFol
 
 export async function deletePhotoFromDrive(fileIdOrUrl: string) {
   try {
+    if (!fileIdOrUrl || !fileIdOrUrl.trim()) {
+      return { success: true, skipped: true };
+    }
+
     const webAppUrl = process.env.GOOGLE_APPS_SCRIPT_URL;
     if (!webAppUrl) {
       throw new Error('GOOGLE_APPS_SCRIPT_URL is not defined in environment variables.');
     }
 
-    // 1. Safeguard: Extract raw file identifier if an AppSheet URL was passed accidentally
-    let cleanFileId = fileIdOrUrl;
+    // 1. Extract raw file identifier or filename if path/URL was passed
+    let cleanFileId = fileIdOrUrl.trim();
+    let fileName = '';
+
     if (cleanFileId.includes('fileName=')) {
       try {
         const urlObj = new URL(cleanFileId);
         const rawFileName = urlObj.searchParams.get('fileName');
         if (rawFileName) {
-          // Removes "BookingSets_Images/" prefix if present
-          cleanFileId = decodeURIComponent(rawFileName).split('/').pop() || cleanFileId;
+          cleanFileId = decodeURIComponent(rawFileName);
         }
       } catch (e) {
         // Fallback cleanup
-        cleanFileId = cleanFileId.split('/').pop() || cleanFileId;
       }
     }
 
-    // 2. Call Web App
+    // Extract bare filename without any folder prefix (e.g. "Usage Photos_Images/photo.jpg" -> "photo.jpg")
+    fileName = cleanFileId.split('/').pop() || cleanFileId;
+
+    // 2. Call Web App with both fileId and fileName so Apps Script can fallback dynamically
     const response = await fetch(webAppUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         action: 'delete',
         fileId: cleanFileId,
+        fileName: fileName,
       }),
     });
 
@@ -89,6 +97,7 @@ export async function deletePhotoFromDrive(fileIdOrUrl: string) {
     throw new Error(`Google Drive deletion failed: ${error.message}`);
   }
 }
+
 export async function copyPhotoInDrive(fileNameOrPath: string, newFileName: string, targetFolderId: string) {
   const webAppUrl = process.env.GOOGLE_APPS_SCRIPT_URL;
   if (!webAppUrl) {
