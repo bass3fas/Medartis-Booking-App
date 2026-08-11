@@ -52,6 +52,119 @@ async function findUsageRow(usageId: string) {
   return { headers, row: rows[rowOffset], rowNumber: rowOffset + 2 };
 }
 
+export async function fetchBookingUsageContextAction(formData: FormData) {
+  try {
+    if (!SPREADSHEET_ID) throw new Error('GOOGLE_SPREADSHEET_ID environment variable is missing or undefined.');
+    const bookingId = text(formData.get('BookingID'));
+    const patientMRN = text(formData.get('PatientMRN'));
+    if (!bookingId || !patientMRN) return { success: false, error: 'Booking ID and MRN are required.' };
+
+    const usageResponse = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: 'Usage!A1:Z' });
+    const [usageHeaders = [], ...usageRows] = usageResponse.data.values || [];
+    const usageBookings = usageHeaders.indexOf('BookingID');
+    const usageMrn = usageHeaders.indexOf('PatientMRN');
+    const usageId = usageHeaders.indexOf('UsageID');
+    const setId = usageHeaders.indexOf('SetID');
+    const trayId = usageHeaders.indexOf('TrayID');
+    const partNumber = usageHeaders.indexOf('PartNumber');
+    const itemId = usageHeaders.indexOf('ItemID');
+    const qtyUsed = usageHeaders.indexOf('QtyUsed');
+    const qtyRefilled = usageHeaders.indexOf('Qty Refilled');
+    const description = usageHeaders.indexOf('Description');
+    const photo = usageHeaders.indexOf('Photo');
+
+    const selectedRows = usageRows.map((row, rowIndex) => {
+      const bookingValue = text(row[usageBookings] || '');
+      const mrnValue = text(row[usageMrn] || '');
+      if (!bookingValue || !mrnValue) return null;
+      if (bookingValue.toUpperCase() !== bookingId.toUpperCase()) return null;
+      if (mrnValue.toUpperCase() !== patientMRN.toUpperCase()) return null;
+      return {
+        rowNumber: rowIndex + 2,
+        UsageID: text(row[usageId] || ''),
+        BookingID: bookingValue,
+        SetID: text(row[setId] || ''),
+        TrayID: text(row[trayId] || ''),
+        PartNumber: text(row[partNumber] || ''),
+        ItemID: text(row[itemId] || ''),
+        QtyUsed: Number(row[qtyUsed] || 0),
+        qtyRefilled: Number(row[qtyRefilled] || 0),
+        Description: text(row[description] || ''),
+        Photo: text(row[photo] || ''),
+      };
+    }).filter(Boolean);
+
+    const normalisedRows = selectedRows.map((row: any) => ({
+      usageId: row.UsageID,
+      trayId: row.TrayID,
+      partNumber: row.PartNumber,
+      itemId: row.ItemID,
+      description: row.Description,
+      qtyUsed: Number(row.QtyUsed || 1),
+      qtyRefilled: Number(row.qtyRefilled || 0),
+      setId: row.SetID,
+      photoPath: row.Photo,
+    }));
+
+    const photoResponse = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: "'Usage Photos'!A1:Z" });
+    const [photoHeaders = [], ...photoRows] = photoResponse.data.values || [];
+    const mrnColumn = photoHeaders.indexOf('MRN');
+    const bookingColumn = photoHeaders.indexOf('BookingID');
+    const photoColumn = photoHeaders.indexOf('Photo');
+    let matchedPhoto = '';
+    if (mrnColumn !== -1 && bookingColumn !== -1 && photoColumn !== -1) {
+      for (const row of photoRows) {
+        if (text(row[mrnColumn] || '').toUpperCase() === patientMRN.toUpperCase() && text(row[bookingColumn] || '').toUpperCase() === bookingId.toUpperCase()) {
+          matchedPhoto = text(row[photoColumn] || '');
+          break;
+        }
+      }
+    }
+
+    return {
+      success: true,
+      data: {
+        setId: normalisedRows[0]?.setId || '',
+        items: normalisedRows,
+        usageIds: normalisedRows.map((item: any) => item.usageId).filter(Boolean),
+        photoPath: matchedPhoto || '',
+        photoUrl: matchedPhoto ? `https://www.appsheet.com/image/getimageurl?appName=MedartisPhase1-5435197&tableName=Usage%20Photos&fileName=${encodeURIComponent(matchedPhoto)}&width=1000` : '',
+      }
+    };
+  } catch (error: unknown) {
+    return { success: false, error: error instanceof Error ? error.message : 'Could not read usage context.' };
+  }
+}
+
+export async function deleteBookingUsagePhotoAction(formData: FormData) {
+  try {
+    const bookingId = text(formData.get('BookingID'));
+    const patientMrn = text(formData.get('PatientMRN'));
+    const photoPath = text(formData.get('PhotoPath'));
+    if (!bookingId || !patientMrn || !photoPath) return { success: false, error: 'Booking ID, MRN, and photo path are required.' };
+
+    const response = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID!, range: "'Usage Photos'!A1:Z" });
+    const [headers = [], ...rows] = response.data.values || [];
+    const mrnColumn = headers.indexOf('MRN');
+    const bookingColumn = headers.indexOf('BookingID');
+    const photoColumn = headers.indexOf('Photo');
+
+    if (mrnColumn === -1 || bookingColumn === -1 || photoColumn === -1) return { success: false, error: 'Usage Photos sheet is missing required columns.' };
+
+    const matchingRow = rows.findIndex((row) => {
+      return text(row[mrnColumn] || '').toUpperCase() === patientMrn.toUpperCase() && text(row[bookingColumn] || '').toUpperCase() === bookingId.toUpperCase() && text(row[photoColumn] || '') === photoPath;
+    });
+
+    if (matchingRow !== -1) {
+      await sheets.spreadsheets.values.clear({ spreadsheetId: SPREADSHEET_ID!, range: `Usage Photos!A${matchingRow + 2}:Z${matchingRow + 2}` });
+    }
+
+    return { success: true, message: 'Usage photo reference removed.' };
+  } catch (error: unknown) {
+    return { success: false, error: error instanceof Error ? error.message : 'Could not delete the usage photo.' };
+  }
+}
+
 export async function updateUsageAction(formData: FormData) {
   try {
     const usageId = text(formData.get('UsageID'));

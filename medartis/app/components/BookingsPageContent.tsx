@@ -892,7 +892,7 @@ export default function BookingsDashboardPage() {
                                     onClick={() => handleOpenUsageModal(booking, selectedSetTabs[booking.BookingID] || booking.RelatedBookingSets[0]?.SetID)}
                                     disabled={!selectedSetTabs[booking.BookingID] && booking.RelatedBookingSets.length === 0}
                                     className="btn btn-secondary btn-sm font-bold"
-                                  >+ Add Usage</button>
+                                  >Add/Edit Usage</button>
                                 </div>
                               </div>
                             </div>

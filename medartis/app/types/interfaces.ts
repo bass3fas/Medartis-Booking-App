@@ -217,6 +217,7 @@ export interface VirtualPartsMaster extends PartsMaster {
 
 export interface UsageItemInput {
   id: number;
+  usageId?: string;
   trayId: string;
   partNumber: string;
   itemId: string;

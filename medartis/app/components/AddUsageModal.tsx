@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { addBookingUsageAction } from '../actions/addUsageAction';
+import { deleteBookingUsagePhotoAction, deleteUsageAction, fetchBookingUsageContextAction, updateUsageAction } from '../actions/usageMutationsAction';
 import type { EnhancedBooking } from '../types/interfaces';
 import { fetchTraysAndUsageForSet } from '../actions/getSetsAction';
 import type { EnrichedTray, VirtualSet } from '../types/interfaces';
@@ -19,6 +20,7 @@ interface AddUsageModalProps {
 
 interface UsageItem {
   id: number;
+  usageId?: string;
   trayId: string;
   partNumber: string;
   itemId: string;
@@ -78,6 +80,8 @@ export default function AddUsageModal({ isOpen, onClose, onSuccess, booking, ava
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [existingPhotoPath, setExistingPhotoPath] = useState('');
+  const [existingUsageIds, setExistingUsageIds] = useState<string[]>([]);
 
   const patientMRNOptions = useMemo(() => Array.from(new Set([
     ...splitCommaValue(booking?.['Patient MRN']),
@@ -91,15 +95,79 @@ export default function AddUsageModal({ isOpen, onClose, onSuccess, booking, ava
   useEffect(() => {
     if (!isOpen) return;
     const defaultSetId = initialSetId || setOptions[0]?.SetID || '';
+    const defaultMrn = patientMRNOptions[0] || '';
     setSelectedSetId(defaultSetId);
-    setSelectedMrn(patientMRNOptions[0] || '');
+    setSelectedMrn(defaultMrn);
     setNewMrn('');
     setUsageItems([]);
     setNextId(1);
     setError(null);
     setSelectedFile(null);
     setPreviewUrl(null);
+    setExistingPhotoPath('');
+    setExistingUsageIds([]);
   }, [isOpen, initialSetId, patientMRNOptions, setOptions]);
+
+  useEffect(() => {
+    if (!isOpen || !booking || !selectedMrn) return;
+    const existing = booking.PatientUsages.find((usage) => usage.MRN === selectedMrn);
+    if (!existing && selectedMrn) {
+      setUsageItems([]);
+      setExistingUsageIds([]);
+      setExistingPhotoPath('');
+      setPreviewUrl(null);
+    }
+
+    const loadUsageContext = async () => {
+      setError(null);
+      const payload = new FormData();
+      payload.set('BookingID', booking.BookingID);
+      payload.set('PatientMRN', selectedMrn);
+      const result = await fetchBookingUsageContextAction(payload);
+      if (!result.success || !result.data) {
+        setError(result.error || 'Unable to load this usage context.');
+        return;
+      }
+
+      const context = result.data as {
+        setId?: string;
+        items?: Array<{
+          usageId?: string;
+          trayId?: string;
+          partNumber?: string;
+          itemId?: string;
+          description?: string;
+          qtyUsed?: number;
+          qtyRefilled?: number;
+          setId?: string;
+        }>;
+        usageIds?: string[];
+        photoPath?: string;
+        photoUrl?: string;
+      };
+
+      if (context.setId) setSelectedSetId(context.setId);
+
+      const loadedItems = (context.items || []).map((row, index) => ({
+        id: index + 1,
+        usageId: row.usageId,
+        trayId: row.trayId || '',
+        partNumber: row.partNumber || '',
+        itemId: row.itemId || '',
+        description: row.description || '',
+        qtyUsed: Number(row.qtyUsed || 1),
+        qtyRefilled: Number(row.qtyRefilled || 0),
+      }));
+
+      setUsageItems(loadedItems);
+      setExistingUsageIds(context.usageIds || []);
+      setExistingPhotoPath(context.photoPath || '');
+      setPreviewUrl(context.photoUrl || null);
+      setNextId((Math.max(...loadedItems.map((item) => item.id), 0) + 1) || 1);
+    };
+
+    loadUsageContext();
+  }, [booking, isOpen, selectedMrn]);
 
   useEffect(() => {
     if (!isOpen || !selectedSetId) {
@@ -126,9 +194,24 @@ export default function AddUsageModal({ isOpen, onClose, onSuccess, booking, ava
     setPreviewUrl(URL.createObjectURL(compressed));
   };
 
-  const handleRemovePhoto = () => {
+  const handleRemovePhoto = async () => {
+    if (existingPhotoPath && booking && selectedMrn) {
+      const confirmDelete = window.confirm('Delete the existing MRN usage photo?');
+      if (!confirmDelete) return;
+      const payload = new FormData();
+      payload.set('BookingID', booking.BookingID);
+      payload.set('PatientMRN', selectedMrn);
+      payload.set('PhotoPath', existingPhotoPath);
+      const result = await deleteBookingUsagePhotoAction(payload);
+      if (!result.success) {
+        setError(result.error || 'Unable to delete the photo.');
+        return;
+      }
+      setExistingPhotoPath('');
+    }
+
     setSelectedFile(null);
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    if (previewUrl && previewUrl.startsWith('blob:')) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
   };
 
@@ -156,8 +239,7 @@ export default function AddUsageModal({ isOpen, onClose, onSuccess, booking, ava
 
     if (!booking) return;
 
-
-    const hasPhoto = Boolean(selectedFile);
+    const hasPhoto = Boolean(selectedFile || existingPhotoPath);
     const hasItems = usageItems.length > 0 && usageItems.some(i => i.partNumber && i.qtyUsed > 0);
 
     if (!hasPhoto && !hasItems) {
@@ -175,19 +257,89 @@ export default function AddUsageModal({ isOpen, onClose, onSuccess, booking, ava
     formData.set('Hospital', booking.Hospital || '');
     formData.set('currentUserName', currentUserName);
     formData.set('currentUserRole', currentUserRole);
-    formData.set('usage_items', JSON.stringify(usageItems));
 
-    if (selectedFile) {
-      formData.set('PhotoFile', selectedFile);
-    }
+    const deletedIds = existingUsageIds.filter((usageId) => !usageItems.some((item) => item.usageId === usageId));
+    const newItems = usageItems.filter((item) => !item.usageId);
 
     startTransition(async () => {
-      const result = await addBookingUsageAction(formData);
-      if (result.success) {
+      try {
+        for (const usageId of deletedIds) {
+          const deleteForm = new FormData();
+          deleteForm.set('UsageID', usageId);
+          deleteForm.set('currentUserName', currentUserName);
+          deleteForm.set('currentUserRole', currentUserRole);
+          const deleteResult = await deleteUsageAction(deleteForm);
+          if (!deleteResult.success) {
+            setError(deleteResult.error || 'Unable to delete an old usage row.');
+            return;
+          }
+        }
+
+        for (const item of usageItems) {
+          if (!item.usageId) continue;
+          const editForm = new FormData();
+          editForm.set('UsageID', item.usageId);
+          editForm.set('BookingID', booking.BookingID);
+          editForm.set('SetID', selectedSetId);
+          editForm.set('PatientMRN', patientMRN);
+          editForm.set('TrayID', item.trayId);
+          editForm.set('PartNumber', item.partNumber);
+          editForm.set('ItemID', item.itemId);
+          editForm.set('Description', item.description);
+          editForm.set('QtyUsed', String(item.qtyUsed || 0));
+          editForm.set('Qty Refilled', String(item.qtyRefilled || 0));
+          editForm.set('Date', formData.get('Date') as string);
+          editForm.set('Notes', formData.get('Notes') as string);
+          editForm.set('Photo', existingPhotoPath || '');
+          editForm.set('currentUserName', currentUserName);
+          editForm.set('currentUserRole', currentUserRole);
+          const updateResult = await updateUsageAction(editForm);
+          if (!updateResult.success) {
+            setError(updateResult.error || 'Unable to update an existing usage row.');
+            return;
+          }
+        }
+
+        if (newItems.length > 0) {
+          const addFormData = new FormData();
+          addFormData.set('BookingID', booking.BookingID);
+          addFormData.set('SetID', selectedSetId);
+          addFormData.set('PatientMRN', patientMRN);
+          addFormData.set('Hospital', booking.Hospital || '');
+          addFormData.set('currentUserName', currentUserName);
+          addFormData.set('currentUserRole', currentUserRole);
+          addFormData.set('Date', formData.get('Date') as string);
+          addFormData.set('Notes', formData.get('Notes') as string);
+          addFormData.set('usage_items', JSON.stringify(newItems));
+          if (selectedFile) addFormData.set('PhotoFile', selectedFile);
+          const addResult = await addBookingUsageAction(addFormData);
+          if (!addResult.success) {
+            setError(addResult.error || 'Unable to save usage data.');
+            return;
+          }
+        } else if (selectedFile) {
+          const addFormData = new FormData();
+          addFormData.set('BookingID', booking.BookingID);
+          addFormData.set('SetID', selectedSetId);
+          addFormData.set('PatientMRN', patientMRN);
+          addFormData.set('Hospital', booking.Hospital || '');
+          addFormData.set('currentUserName', currentUserName);
+          addFormData.set('currentUserRole', currentUserRole);
+          addFormData.set('Date', formData.get('Date') as string);
+          addFormData.set('Notes', formData.get('Notes') as string);
+          addFormData.set('usage_items', '[]');
+          addFormData.set('PhotoFile', selectedFile);
+          const addResult = await addBookingUsageAction(addFormData);
+          if (!addResult.success) {
+            setError(addResult.error || 'Unable to save usage photo.');
+            return;
+          }
+        }
+
         onSuccess();
         onClose();
-      } else {
-        setError(result.error || 'Unable to save usage data.');
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : 'Unable to save usage data.');
       }
     });
   };
