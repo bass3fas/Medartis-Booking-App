@@ -111,12 +111,16 @@ export async function fetchPartsCatalogue(): Promise<{ success: boolean; data: V
         return uPart === partNum || (masterSku !== '' && uPart === masterSku);
       });
 
+      const cleanPartNum = (part.PartNumber || 'NOPART').toString().trim().replace(/\s+/g, '_');
+      const cleanSku = (part['Master SKU'] || 'NOSKU').toString().trim().replace(/\s+/g, '_');
+
       return {
         ...part,
         inSetsQty,
         allocations,
         history,
-        rowIndex: `row-${idx}-${part.PartNumber}`
+        // Guaranteed strictly unique key combining spreadsheet row offset and index
+        rowIndex: `part-row-${idx + 2}-${cleanPartNum}-${cleanSku}`
       };
     });
 

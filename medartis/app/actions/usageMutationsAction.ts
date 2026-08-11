@@ -20,25 +20,90 @@ const canManageUsage = async (role: string, userName: string, bookingId: string)
   return text(booking?.[salesColumn] || '').toLowerCase() === userName.trim().toLowerCase();
 };
 
-async function removeUsagePhotoRow(photoPath: string) {
+async function removeUsagePhotoRow(bookingId: string, patientMrn: string, photoPath: string) {
   const response = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: "'Usage Photos'!A1:Z" });
   const [headers = [], ...rows] = response.data.values || [];
+  const mrnColumn = headers.indexOf('MRN');
+  const bookingColumn = headers.indexOf('BookingID');
   const photoColumn = headers.indexOf('Photo');
-  if (photoColumn === -1) return;
-  const rowOffset = rows.findIndex((row) => text(row[photoColumn]) === photoPath);
-  if (rowOffset !== -1) await sheets.spreadsheets.values.clear({ spreadsheetId: SPREADSHEET_ID!, range: `'Usage Photos'!A${rowOffset + 2}:Z${rowOffset + 2}` });
+  if (mrnColumn === -1 || bookingColumn === -1 || photoColumn === -1) return;
+
+  const matchingIndexes = rows.reduce<number[]>((acc, row, idx) => {
+    const rowMrn = text(row[mrnColumn] || '');
+    const rowBooking = text(row[bookingColumn] || '');
+    const rowPhoto = text(row[photoColumn] || '');
+    const sameMrn = rowMrn.toUpperCase() === patientMrn.toUpperCase();
+    const sameBooking = rowBooking.toUpperCase() === bookingId.toUpperCase();
+    const samePhoto = rowPhoto === photoPath;
+    if (sameMrn && sameBooking && samePhoto) acc.push(idx + 1 + 1);
+    return acc;
+  }, []);
+
+  for (const rowNumber of matchingIndexes) {
+    await sheets.spreadsheets.values.clear({ spreadsheetId: SPREADSHEET_ID!, range: `Usage Photos!A${rowNumber}:Z${rowNumber}` });
+  }
 }
 
 async function removeBookingUsagePhotoReference(bookingId: string, photoPath: string) {
   const response = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: 'Bookings!A1:Z' });
   const [headers = [], ...rows] = response.data.values || [];
   const bookingColumn = headers.indexOf('BookingID');
-  const usagePhotoColumn = headers.indexOf('UsagePhoto');
-  if (bookingColumn === -1 || usagePhotoColumn === -1) return;
+  const usagePhotoColumns = ['UsagePhoto', 'UsagePhoto2'].map((name) => headers.indexOf(name)).filter((i) => i !== -1);
+  if (bookingColumn === -1 || usagePhotoColumns.length === 0) return;
+
   const rowOffset = rows.findIndex((row) => text(row[bookingColumn]).toUpperCase() === bookingId.toUpperCase());
   if (rowOffset === -1) return;
-  const nextPhotos = text(rows[rowOffset][usagePhotoColumn]).split(',').map((value) => value.trim()).filter((value) => value && value !== photoPath);
-  await sheets.spreadsheets.values.update({ spreadsheetId: SPREADSHEET_ID!, range: `Bookings!${String.fromCharCode(65 + usagePhotoColumn)}${rowOffset + 2}`, valueInputOption: 'USER_ENTERED', requestBody: { values: [[nextPhotos.join(', ')]] } });
+
+  for (const usagePhotoColumn of usagePhotoColumns) {
+    const currentValue = text(rows[rowOffset][usagePhotoColumn] || '');
+    const nextPhotos = currentValue
+      .split(',')
+      .map((value) => value.trim())
+      .filter((value) => value && value !== photoPath && value !== '');
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID!,
+      range: `Bookings!${String.fromCharCode(65 + usagePhotoColumn)}${rowOffset + 2}`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [[nextPhotos.join(', ')]] },
+    });
+  }
+}
+
+async function removeBookingPatientMrnReference(bookingId: string, patientMrn: string) {
+  const response = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: 'Bookings!A1:Z' });
+  const [headers = [], ...rows] = response.data.values || [];
+  const bookingColumn = headers.indexOf('BookingID');
+  const patientMrnColumn = headers.indexOf('Patient MRN');
+  if (bookingColumn === -1 || patientMrnColumn === -1) return;
+
+  const rowOffset = rows.findIndex((row) => text(row[bookingColumn]).toUpperCase() === bookingId.toUpperCase());
+  if (rowOffset === -1) return;
+
+  const currentValue = text(rows[rowOffset][patientMrnColumn] || '');
+  const nextValues = currentValue
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value) => value && value.toUpperCase() !== patientMrn.toUpperCase());
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SPREADSHEET_ID!,
+    range: `Bookings!${String.fromCharCode(65 + patientMrnColumn)}${rowOffset + 2}`,
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values: [[nextValues.join(', ')]] },
+  });
+}
+
+async function hasAnyRemainingUsageForMrn(bookingId: string, patientMrn: string) {
+  const response = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: 'Usage!A1:Z' });
+  const [headers = [], ...rows] = response.data.values || [];
+  const bookingColumn = headers.indexOf('BookingID');
+  const mrnColumn = headers.indexOf('PatientMRN');
+  if (bookingColumn === -1 || mrnColumn === -1) return false;
+
+  return rows.some((row) => {
+    return text(row[bookingColumn] || '').toUpperCase() === bookingId.toUpperCase() && text(row[mrnColumn] || '').toUpperCase() === patientMrn.toUpperCase();
+  });
 }
 
 async function findUsageRow(usageId: string) {
@@ -192,15 +257,32 @@ export async function deleteUsageAction(formData: FormData) {
     if (!usageId) return { success: false, error: 'Usage ID is required.' };
     const { headers, row, rowNumber } = await findUsageRow(usageId);
     const bookingIdColumn = headers.indexOf('BookingID');
+    const patientMrnColumn = headers.indexOf('PatientMRN');
     const photoColumn = headers.indexOf('Photo');
-    if (!(await canManageUsage(text(formData.get('currentUserRole')), text(formData.get('currentUserName')), text(row[bookingIdColumn] || '')))) return { success: false, error: 'You do not have permission to delete this usage.' };
-    const photoPath = photoColumn === -1 ? '' : text(row[photoColumn]);
+
+    if (!(await canManageUsage(text(formData.get('currentUserRole')), text(formData.get('currentUserName')), text(row[bookingIdColumn] || '')))) {
+      return { success: false, error: 'You do not have permission to delete this usage.' };
+    }
+
+    const bookingId = text(row[bookingIdColumn] || '');
+    const patientMrn = text(row[patientMrnColumn] || '');
+    const photoPath = photoColumn === -1 ? '' : text(row[photoColumn] || '');
+
     await sheets.spreadsheets.values.clear({ spreadsheetId: SPREADSHEET_ID!, range: `Usage!A${rowNumber}:S${rowNumber}` });
+
     if (photoPath) {
       await deletePhotoFromDrive(photoPath.split('/').pop() || photoPath).catch((error) => console.warn('Usage photo drive delete failed:', error));
-      await removeUsagePhotoRow(photoPath);
-      await removeBookingUsagePhotoReference(text(row[bookingIdColumn] || ''), photoPath);
+      await removeUsagePhotoRow(bookingId, patientMrn, photoPath);
+      await removeBookingUsagePhotoReference(bookingId, photoPath);
     }
+
+    if (bookingId && patientMrn) {
+      const anyRemaining = await hasAnyRemainingUsageForMrn(bookingId, patientMrn);
+      if (!anyRemaining) {
+        await removeBookingPatientMrnReference(bookingId, patientMrn);
+      }
+    }
+
     return { success: true, message: 'Usage deleted.' };
   } catch (error: unknown) {
     return { success: false, error: error instanceof Error ? error.message : 'Could not delete usage.' };

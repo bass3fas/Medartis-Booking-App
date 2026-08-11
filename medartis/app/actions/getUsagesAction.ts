@@ -101,8 +101,8 @@ export async function fetchUsageLog(): Promise<{ success: boolean; data: Patient
 
       // 🔄 DYNAMIC KEY ROUTING:
       const groupKey = rawMrn !== '' 
-        ? `${rawMrn}-${bookingId}` 
-        : `NOMRN-HASH-${hospital.replace(/\s+/g, '')}-${date.replace(/\//g, '-')}-${bookingId}`;
+        ? `${rawMrn}-${bookingId}`
+        : `NOMRN-HASH-${hospital.replace(/\s+/g, '')}-${date.replace(/\//g, '-')}-${bookingId}-${usage.UsageID}`;
 
       if (!groupsMap[groupKey]) {
         groupsMap[groupKey] = {
