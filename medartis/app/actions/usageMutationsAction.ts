@@ -220,14 +220,17 @@ export async function deleteBookingUsageByMrnAction(formData: FormData) {
     const bookingId = text(formData.get('BookingID'));
     const patientMrn = text(formData.get('PatientMRN'));
     const currentUserRole = text(formData.get('currentUserRole'));
-    const currentUserName = text(formData.get('currentUserName'));
 
-    if (!bookingId || !patientMrn) return { success: false, error: 'Booking ID and Patient MRN are required.' };
+    if (!bookingId || !patientMrn) {
+      return { success: false, error: 'Booking ID and Patient MRN are required.' };
+    }
+
     const normalizedRole = currentUserRole.trim().toLowerCase();
     if (normalizedRole !== 'admin' && normalizedRole !== 'warehouse') {
       return { success: false, error: 'Only Admin and Warehouse users can delete a full MRN usage bundle.' };
     }
 
+    // 1. Fetch items from 'Usage' sheet
     const usageResponse = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: 'Usage!A1:Z' });
     const [usageHeaders = [], ...usageRows] = usageResponse.data.values || [];
     const bookingColumn = usageHeaders.indexOf('BookingID');
@@ -239,46 +242,65 @@ export async function deleteBookingUsageByMrnAction(formData: FormData) {
       return { success: false, error: 'Usage sheet is missing BookingID or PatientMRN columns.' };
     }
 
-    const matchingRows = usageRows.map((row, rowIndex) => {
+    const matchingUsageRows = usageRows.map((row, rowIndex) => {
       const rowBooking = text(row[bookingColumn] || '');
       const rowMrn = text(row[mrnColumn] || '');
       if (rowBooking.toUpperCase() !== bookingId.toUpperCase()) return null;
       if (rowMrn.toUpperCase() !== patientMrn.toUpperCase()) return null;
-      return { row, rowNumber: rowIndex + 2, usageId: text(row[usageIdColumn] || ''), photoPath: photoColumn === -1 ? '' : text(row[photoColumn] || '') };
-    }).filter(Boolean) as Array<{ row: string[]; rowNumber: number; usageId: string; photoPath: string }>;
+      return { rowNumber: rowIndex + 2, photoPath: photoColumn === -1 ? '' : text(row[photoColumn] || '') };
+    }).filter(Boolean) as Array<{ rowNumber: number; photoPath: string }>;
 
-    const photoPaths = Array.from(new Set(matchingRows.map((match) => match.photoPath).filter(Boolean)));
+    // Collect usage photo paths from the Usage sheet
+    const usagePhotoPaths = matchingUsageRows.map((match) => match.photoPath).filter(Boolean);
 
-    for (const match of matchingRows) {
-      await sheets.spreadsheets.values.clear({ spreadsheetId: SPREADSHEET_ID!, range: `Usage!A${match.rowNumber}:S${match.rowNumber}` });
+    // 2. Clear rows in 'Usage' sheet
+    for (const match of matchingUsageRows) {
+      await sheets.spreadsheets.values.clear({ 
+        spreadsheetId: SPREADSHEET_ID!, 
+        range: `Usage!A${match.rowNumber}:S${match.rowNumber}` 
+      });
     }
 
-    for (const photoPath of photoPaths) {
-      await deletePhotoFromDrive(photoPath.split('/').pop() || photoPath).catch((error) => console.warn('Usage photo drive delete failed:', error));
-    }
-
+    // 3. Fetch photos from 'Usage Photos' sheet
     const photoResponse = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: "'Usage Photos'!A1:Z" });
     const [photoHeaders = [], ...photoRows] = photoResponse.data.values || [];
     const photoMrnColumn = photoHeaders.indexOf('MRN');
     const photoBookingColumn = photoHeaders.indexOf('BookingID');
-    const photoPhotoColumn = photoHeaders.indexOf('Photo');
+    const photoPathColumn = photoHeaders.indexOf('Photo');
 
-    if (photoMrnColumn !== -1 && photoBookingColumn !== -1 && photoPhotoColumn !== -1) {
+    const photosFromPhotoSheet: string[] = [];
+
+    if (photoMrnColumn !== -1 && photoBookingColumn !== -1) {
       const photoRowsToDelete = photoRows.map((row, index) => {
         const rowMrn = text(row[photoMrnColumn] || '');
         const rowBooking = text(row[photoBookingColumn] || '');
-        const rowPhoto = text(row[photoPhotoColumn] || '');
+        const rowPhoto = photoPathColumn !== -1 ? text(row[photoPathColumn] || '') : '';
+
         if (rowMrn.toUpperCase() === patientMrn.toUpperCase() && rowBooking.toUpperCase() === bookingId.toUpperCase()) {
+          if (rowPhoto) photosFromPhotoSheet.push(rowPhoto);
           return index + 2;
         }
         return null;
       }).filter((value): value is number => Boolean(value));
 
+      // Clear matching rows in 'Usage Photos' sheet (with single quotes around sheet name)
       for (const rowNumber of photoRowsToDelete) {
-        await sheets.spreadsheets.values.clear({ spreadsheetId: SPREADSHEET_ID!, range: `Usage Photos!A${rowNumber}:Z${rowNumber}` });
+        await sheets.spreadsheets.values.clear({ 
+          spreadsheetId: SPREADSHEET_ID!, 
+          range: `'Usage Photos'!A${rowNumber}:Z${rowNumber}` 
+        });
       }
     }
 
+    // 4. Combine all photo paths (Usage sheet + Usage Photos sheet) and delete from Google Drive
+    const allPhotoPaths = Array.from(new Set([...usagePhotoPaths, ...photosFromPhotoSheet]));
+
+    for (const photoPath of allPhotoPaths) {
+      await deletePhotoFromDrive(photoPath.split('/').pop() || photoPath)
+        .catch((error) => console.warn('Usage photo drive delete failed:', error));
+    }
+
+    // 5. Cleanup references inside 'Bookings' sheet
     const bookingResponse = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: 'Bookings!A1:Z' });
     const [bookingHeaders = [], ...bookingRows] = bookingResponse.data.values || [];
     const bookingIdColumn = bookingHeaders.indexOf('BookingID');
@@ -291,6 +313,7 @@ export async function deleteBookingUsageByMrnAction(formData: FormData) {
       if (rowIndex !== -1) {
         const bookingRowNumber = rowIndex + 2;
 
+        // Clean Patient MRN cell
         if (patientMrnCellColumn !== -1) {
           const current = text(bookingRows[rowIndex][patientMrnCellColumn] || '');
           const next = current
@@ -305,12 +328,13 @@ export async function deleteBookingUsageByMrnAction(formData: FormData) {
           });
         }
 
+        // Clean UsagePhoto and UsagePhoto2 references
         for (const refCol of [usagePhotoColumn, usagePhoto2Column].filter((column) => column !== -1)) {
           const current = text(bookingRows[rowIndex][refCol] || '');
           const next = current
             .split(',')
             .map((value) => value.trim())
-            .filter((value) => value && photoPaths.every((path) => value !== path));
+            .filter((value) => value && allPhotoPaths.every((path) => value !== path));
           await sheets.spreadsheets.values.update({
             spreadsheetId: SPREADSHEET_ID!,
             range: `Bookings!${String.fromCharCode(65 + refCol)}${bookingRowNumber}`,
@@ -326,7 +350,6 @@ export async function deleteBookingUsageByMrnAction(formData: FormData) {
     return { success: false, error: error instanceof Error ? error.message : 'Could not delete MRN usage bundle.' };
   }
 }
-
 export async function deleteUsageAction(formData: FormData) {
   try {
     const usageId = text(formData.get('UsageID'));
