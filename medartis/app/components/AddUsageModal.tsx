@@ -3,9 +3,10 @@
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { addBookingUsageAction } from '../actions/addUsageAction';
 import { deleteBookingUsagePhotoAction, deleteUsageAction, fetchBookingUsageContextAction, updateUsageAction } from '../actions/usageMutationsAction';
+import { fetchPartsCatalogue } from '../actions/getCatalogueAction';
 import type { EnhancedBooking } from '../types/interfaces';
 import { fetchTraysAndUsageForSet } from '../actions/getSetsAction';
-import type { EnrichedTray, VirtualSet } from '../types/interfaces';
+import type { EnrichedTray, VirtualSet, VirtualPartsMaster } from '../types/interfaces';
 
 interface AddUsageModalProps {
   isOpen: boolean;
@@ -21,6 +22,7 @@ interface AddUsageModalProps {
 interface UsageItem {
   id: number;
   usageId?: string;
+  setId: string;
   trayId: string;
   partNumber: string;
   itemId: string;
@@ -73,17 +75,19 @@ export default function AddUsageModal({ isOpen, onClose, onSuccess, booking, ava
   const [error, setError] = useState<string | null>(null);
   const [usageItems, setUsageItems] = useState<UsageItem[]>([]);
   const [nextId, setNextId] = useState(1);
-  const [selectedSetId, setSelectedSetId] = useState('');
-  const [trays, setTrays] = useState<EnrichedTray[]>([]);
+  const [traysBySet, setTraysBySet] = useState<Record<string, EnrichedTray[]>>({});
   const [selectedMrn, setSelectedMrn] = useState('');
   const [newMrn, setNewMrn] = useState('');
+  const [showNewMrnInput, setShowNewMrnInput] = useState(false);
+  const [patientMRNOptions, setPatientMRNOptions] = useState<string[]>([]);
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [existingPhotoPath, setExistingPhotoPath] = useState('');
   const [existingUsageIds, setExistingUsageIds] = useState<string[]>([]);
+  const [partsCatalogue, setPartsCatalogue] = useState<VirtualPartsMaster[]>([]);
 
-  const patientMRNOptions = useMemo(() => Array.from(new Set([
+  const bookingMRNOptions = useMemo(() => Array.from(new Set([
     ...splitCommaValue(booking?.['Patient MRN']),
     ...(booking?.PatientUsages.map((usage) => usage.MRN).filter(Boolean) || []),
   ])), [booking]);
@@ -94,9 +98,9 @@ export default function AddUsageModal({ isOpen, onClose, onSuccess, booking, ava
 
   useEffect(() => {
     if (!isOpen) return;
-    const defaultSetId = initialSetId || setOptions[0]?.SetID || '';
-    const defaultMrn = patientMRNOptions[0] || '';
-    setSelectedSetId(defaultSetId);
+
+    const defaultMrn = bookingMRNOptions[0] || '';
+    setPatientMRNOptions(bookingMRNOptions);
     setSelectedMrn(defaultMrn);
     setNewMrn('');
     setUsageItems([]);
@@ -106,7 +110,32 @@ export default function AddUsageModal({ isOpen, onClose, onSuccess, booking, ava
     setPreviewUrl(null);
     setExistingPhotoPath('');
     setExistingUsageIds([]);
-  }, [isOpen, initialSetId, patientMRNOptions, setOptions]);
+    const loadParts = async () => {
+      const result = await fetchPartsCatalogue();
+      if (result.success) setPartsCatalogue(result.data);
+    };
+    loadParts();
+  }, [isOpen, initialSetId, bookingMRNOptions, setOptions]);
+
+  useEffect(() => {
+    if (!isOpen || !booking || setOptions.length === 0) return;
+
+    const bootSetTrays = async () => {
+      const pending = await Promise.all(
+        setOptions.map(async (set) => {
+          if (!set?.SetID) return;
+          const result = await fetchTraysAndUsageForSet(set.SetID);
+          if (result.success) {
+            setTraysBySet((current) => ({ ...current, [set.SetID]: result.trays }));
+          }
+        })
+      );
+
+      return pending;
+    };
+
+    bootSetTrays();
+  }, [booking, isOpen, setOptions]);
 
   useEffect(() => {
     if (!isOpen || !booking || !selectedMrn) return;
@@ -146,11 +175,10 @@ export default function AddUsageModal({ isOpen, onClose, onSuccess, booking, ava
         photoUrl?: string;
       };
 
-      if (context.setId) setSelectedSetId(context.setId);
-
       const loadedItems = (context.items || []).map((row, index) => ({
         id: index + 1,
         usageId: row.usageId,
+        setId: row.setId || context.setId || '',
         trayId: row.trayId || '',
         partNumber: row.partNumber || '',
         itemId: row.itemId || '',
@@ -169,22 +197,19 @@ export default function AddUsageModal({ isOpen, onClose, onSuccess, booking, ava
     loadUsageContext();
   }, [booking, isOpen, selectedMrn]);
 
-  useEffect(() => {
-    if (!isOpen || !selectedSetId) {
-      setTrays([]);
-      return;
-    }
-    let cancelled = false;
+  const loadSetTrays = async (setId: string) => {
+    if (!setId) return;
+    if (traysBySet[setId]) return;
+
     setIsLoadingSet(true);
-    setTrays([]);
-    fetchTraysAndUsageForSet(selectedSetId).then((result) => {
-      if (cancelled) return;
-      if (result.success) setTrays(result.trays);
-      else setError(result.error || 'Could not load trays for selected set.');
-      setIsLoadingSet(false);
-    });
-    return () => { cancelled = true; };
-  }, [isOpen, selectedSetId]);
+    const result = await fetchTraysAndUsageForSet(setId);
+    if (result.success) {
+      setTraysBySet((current) => ({ ...current, [setId]: result.trays }));
+    } else {
+      setError(result.error || 'Could not load trays for selected set.');
+    }
+    setIsLoadingSet(false);
+  };
 
   const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -216,18 +241,39 @@ export default function AddUsageModal({ isOpen, onClose, onSuccess, booking, ava
   };
 
   const handleAddItem = () => {
-    setUsageItems((items) => [...items, { id: nextId, trayId: '', partNumber: '', itemId: '', description: '', qtyUsed: 1, qtyRefilled: 0 }]);
+    setUsageItems((items) => [...items, { id: nextId, setId: initialSetId || '', trayId: '', partNumber: '', itemId: '', description: '', qtyUsed: 1, qtyRefilled: 0 }]);
     setNextId((id) => id + 1);
   };
 
-  const handleItemChange = (id: number, field: keyof UsageItem, value: string | number) => {
+  const handleItemChange = async (id: number, field: keyof UsageItem, value: string | number) => {
+    if (field === 'setId' && value) {
+      await loadSetTrays(String(value));
+    }
+
     setUsageItems((items) => items.map((item) => {
       if (item.id !== id) return item;
       const updated = { ...item, [field]: value };
+      if (field === 'setId') {
+        Object.assign(updated, { trayId: '', partNumber: '', itemId: '', description: '' });
+      }
       if (field === 'trayId') Object.assign(updated, { partNumber: '', itemId: '', description: '' });
       if (field === 'partNumber') {
-        const part = trays.find((tray) => tray.TrayID === updated.trayId)?.contents.find((content) => content.PartNumber === value);
-        if (part) Object.assign(updated, { itemId: part.ItemID, description: part.Description || '' });
+        const selectedSet = String(updated.setId || '');
+        const selectedTray = String(updated.trayId || '');
+        const trayList = traysBySet[selectedSet] || [];
+        const tray = trayList.find((candidate) => candidate.TrayID === selectedTray);
+
+        const matchingPart = tray?.contents.find((content) => content.PartNumber === String(value))
+          ?? (selectedSet || selectedTray ? undefined : partsCatalogue.find((content) => content.PartNumber === String(value)));
+
+        if (matchingPart) {
+          Object.assign(updated, {
+            itemId: (matchingPart as any).ItemID || '',
+            description: (matchingPart as any).Description || (matchingPart as any).PartNumber || ''
+          });
+        } else if (selectedSet || selectedTray) {
+          Object.assign(updated, { itemId: '', description: '' });
+        }
       }
       return updated;
     }));
@@ -246,13 +292,8 @@ export default function AddUsageModal({ isOpen, onClose, onSuccess, booking, ava
       return setError('Please upload a usage photo OR add at least one consumed part.');
     }
 
-    if (hasItems && !selectedSetId) {
-      return setError('Please select a set to record consumed parts.');
-    }
-
     const formData = new FormData(event.currentTarget);
     formData.set('BookingID', booking.BookingID);
-    formData.set('SetID', selectedSetId);
     formData.set('PatientMRN', patientMRN);
     formData.set('Hospital', booking.Hospital || '');
     formData.set('currentUserName', currentUserName);
@@ -280,7 +321,7 @@ export default function AddUsageModal({ isOpen, onClose, onSuccess, booking, ava
           const editForm = new FormData();
           editForm.set('UsageID', item.usageId);
           editForm.set('BookingID', booking.BookingID);
-          editForm.set('SetID', selectedSetId);
+          editForm.set('SetID', item.setId);
           editForm.set('PatientMRN', patientMRN);
           editForm.set('TrayID', item.trayId);
           editForm.set('PartNumber', item.partNumber);
@@ -303,7 +344,6 @@ export default function AddUsageModal({ isOpen, onClose, onSuccess, booking, ava
         if (newItems.length > 0) {
           const addFormData = new FormData();
           addFormData.set('BookingID', booking.BookingID);
-          addFormData.set('SetID', selectedSetId);
           addFormData.set('PatientMRN', patientMRN);
           addFormData.set('Hospital', booking.Hospital || '');
           addFormData.set('currentUserName', currentUserName);
@@ -320,7 +360,6 @@ export default function AddUsageModal({ isOpen, onClose, onSuccess, booking, ava
         } else if (selectedFile) {
           const addFormData = new FormData();
           addFormData.set('BookingID', booking.BookingID);
-          addFormData.set('SetID', selectedSetId);
           addFormData.set('PatientMRN', patientMRN);
           addFormData.set('Hospital', booking.Hospital || '');
           addFormData.set('currentUserName', currentUserName);
@@ -368,9 +407,40 @@ export default function AddUsageModal({ isOpen, onClose, onSuccess, booking, ava
                 <p className="text-xs text-base-content/55">Upload a booking photo immediately, or assign an MRN to file it as a Usage Photos record.</p>
               </div>
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <label className="form-control"><span className="label-text mb-1 text-xs font-bold">Patient MRN (optional for photo-only)</span><select className="select select-bordered" value={selectedMrn} onChange={(e) => setSelectedMrn(e.target.value)}><option value="">Choose existing MRN</option>{patientMRNOptions.map((mrn) => <option key={mrn} value={mrn}>{mrn}</option>)}</select></label>
-                <label className="form-control"><span className="label-text mb-1 text-xs font-bold">New patient MRN</span><input className="input input-bordered" value={newMrn} onChange={(e) => setNewMrn(e.target.value)} placeholder="Add new MRN" /></label>
-                <label className="form-control"><span className="label-text mb-1 text-xs font-bold">Used set (optional for photo only)</span><select className="select select-bordered" value={selectedSetId} onChange={(e) => setSelectedSetId(e.target.value)}><option value="">Choose set</option>{setOptions.map((set) => <option key={set.SetID} value={set.SetID}>{set.SetID}</option>)}</select></label>
+                <div className="md:col-span-2 xl:col-span-3">
+                  <span className="label-text mb-2 block text-xs font-bold">Patient MRNs</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {patientMRNOptions.length > 0 ? patientMRNOptions.map((mrn) => (
+                      <button type="button" key={mrn} onClick={() => setSelectedMrn(mrn)} className={`btn btn-xs font-black ${selectedMrn === mrn ? 'btn-primary' : 'btn-outline btn-primary'}`}>{mrn}</button>
+                    )) : <span className="text-xs opacity-55 italic">No MRNs available yet</span>}
+                    <button type="button" onClick={() => setShowNewMrnInput((flag) => !flag)} className="btn btn-success btn-xs btn-circle" aria-label="Add MRN">+</button>
+                  </div>
+                  {showNewMrnInput && (
+                    <div className="mt-3 flex items-center gap-2">
+                      <input className="input input-bordered input-sm" value={newMrn} onChange={(e) => setNewMrn(e.target.value)} placeholder="Type a new MRN" />
+                      <button type="button" className="btn btn-primary btn-sm" onClick={() => {
+                        const next = newMrn.trim();
+                        if (!next) {
+                          setError('Enter an MRN before adding it.');
+                          return;
+                        }
+                        const merged = Array.from(new Set([...patientMRNOptions, next]));
+                        setPatientMRNOptions(merged);
+                        const selected = booking?.PatientUsages.find((u) => u.MRN === next);
+                        if (!selected) {
+                          setUsageItems([]);
+                          setExistingPhotoPath('');
+                          setExistingUsageIds([]);
+                          setPreviewUrl(null);
+                        }
+                        setSelectedMrn(next);
+                        setNewMrn('');
+                        setShowNewMrnInput(false);
+                      }}>Add</button>
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setNewMrn(''); setShowNewMrnInput(false); }}>Cancel</button>
+                    </div>
+                  )}
+                </div>
                 <label className="form-control"><span className="label-text mb-1 text-xs font-bold">Usage date</span><input type="date" name="Date" className="input input-bordered" defaultValue={new Date().toISOString().slice(0, 10)} required /></label>
               </div>
 
@@ -398,7 +468,7 @@ export default function AddUsageModal({ isOpen, onClose, onSuccess, booking, ava
                   <h3 className="text-sm font-black">Consumed parts (optional)</h3>
                   <p className="text-xs text-base-content/55">Add itemized parts if available.</p>
                 </div>
-                <button type="button" onClick={handleAddItem} disabled={!selectedSetId || isLoadingSet} className="btn btn-primary btn-sm">+ Add part</button>
+                <button type="button" onClick={handleAddItem} className="btn btn-primary btn-sm">+ Add part</button>
               </div>
               {isLoadingSet && <div className="flex justify-center py-8"><span className="loading loading-spinner loading-md text-primary" /></div>}
               {!isLoadingSet && !usageItems.length && (
@@ -408,12 +478,23 @@ export default function AddUsageModal({ isOpen, onClose, onSuccess, booking, ava
               )}
               <div className="mt-4 space-y-3">
                 {usageItems.map((item, index) => {
-                  const tray = trays.find((c) => c.TrayID === item.trayId);
+                  const trayList = item.setId ? traysBySet[item.setId] || [] : [];
+                  const tray = trayList.find((c) => c.TrayID === item.trayId);
+                  const partOptions = item.setId && item.trayId && tray
+                    ? tray.contents
+                    : !item.setId && !item.trayId
+                      ? partsCatalogue
+                      : [];
+
                   return (
-                    <div key={item.id} className="grid gap-3 rounded-lg border border-base-200 bg-base-50 p-4 md:grid-cols-[32px_1fr_1fr_90px_90px_32px] md:items-end">
+                    <div key={item.id} className="grid gap-3 rounded-lg border border-base-200 bg-base-50 p-4 md:grid-cols-[32px_160px_160px_160px_90px_90px_32px] md:items-end">
                       <span className="hidden pb-2 text-xs font-bold text-base-content/40 md:block">{index + 1}</span>
-                      <label className="form-control"><span className="label-text mb-1 text-[11px] font-bold">Tray</span><select value={item.trayId} onChange={(e) => handleItemChange(item.id, 'trayId', e.target.value)} className="select select-bordered select-sm"><option value="">Select tray</option>{trays.map((t) => <option key={t.TrayID} value={t.TrayID}>{t.TrayName} ({t.TrayID})</option>)}</select></label>
-                      <label className="form-control"><span className="label-text mb-1 text-[11px] font-bold">Part number</span><select value={item.partNumber} onChange={(e) => handleItemChange(item.id, 'partNumber', e.target.value)} className="select select-bordered select-sm" disabled={!tray}><option value="">Select part</option>{tray?.contents.map((p) => <option key={p.ItemID} value={p.PartNumber}>{p.PartNumber} — {p.Description}</option>)}</select></label>
+                      <label className="form-control"><span className="label-text mb-1 text-[11px] font-bold">Set</span><select value={item.setId} onChange={(e) => handleItemChange(item.id, 'setId', e.target.value)} className="select select-bordered select-sm"><option value="">Direct stock</option>{setOptions.map((set) => <option key={set.SetID} value={set.SetID}>{set.SetID}</option>)}</select></label>
+                      <label className="form-control"><span className="label-text mb-1 text-[11px] font-bold">Tray</span><select value={item.trayId} onChange={(e) => handleItemChange(item.id, 'trayId', e.target.value)} className="select select-bordered select-sm" disabled={!item.setId || !traysBySet[item.setId]?.length}><option value="">Select tray</option>{(traysBySet[item.setId] || []).map((t) => <option key={t.TrayID} value={t.TrayID}>{t.TrayName} ({t.TrayID})</option>)}</select></label>
+                      <label className="form-control"><span className="label-text mb-1 text-[11px] font-bold">Part number</span>
+                        <input list={`part-options-${item.id}`} value={item.partNumber} onChange={(e) => handleItemChange(item.id, 'partNumber', e.target.value)} className="input input-bordered input-sm" placeholder="Filter part" />
+                        <datalist id={`part-options-${item.id}`}>{partOptions.map((entry) => <option key={entry.PartNumber} value={entry.PartNumber}>{entry.PartNumber}</option>)}</datalist>
+                      </label>
                       <label className="form-control"><span className="label-text mb-1 text-[11px] font-bold">Used</span><input type="number" min="1" value={item.qtyUsed} onChange={(e) => handleItemChange(item.id, 'qtyUsed', Number(e.target.value))} className="input input-bordered input-sm" /></label>
                       <label className="form-control"><span className="label-text mb-1 text-[11px] font-bold">Refilled</span><input type="number" min="0" value={item.qtyRefilled} onChange={(e) => handleItemChange(item.id, 'qtyRefilled', Number(e.target.value))} className="input input-bordered input-sm" /></label>
                       <button type="button" onClick={() => setUsageItems((items) => items.filter((u) => u.id !== item.id))} className="btn btn-ghost btn-sm btn-square text-error" aria-label="Remove part">✕</button>

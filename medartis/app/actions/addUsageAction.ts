@@ -57,7 +57,6 @@ export async function addBookingUsageAction(formData: FormData) {
     const bookingId = normalize(formData.get('BookingID'));
     const currentUserName = normalize(formData.get('currentUserName'));
     const currentUserRole = normalize(formData.get('currentUserRole'));
-    const setId = normalize(formData.get('SetID'));
     const patientMRN = normalize(formData.get('PatientMRN'));
     const hospital = normalize(formData.get('Hospital'));
     const date = normalize(formData.get('Date')) || new Date().toISOString().slice(0, 10);
@@ -75,6 +74,23 @@ export async function addBookingUsageAction(formData: FormData) {
       return { success: false, error: 'You do not have permission to add usage photos or usage rows for this booking.' };
     }
 
+    const patientMrnColumn = bookingHeaders.indexOf('Patient MRN');
+    if (patientMrnColumn !== -1 && patientMRN) {
+      const existingMrns = String(bookingRow[patientMrnColumn] || '')
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean);
+      if (!existingMrns.includes(patientMRN)) {
+        const nextMrns = Array.from(new Set([...existingMrns, patientMRN]));
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: SPREADSHEET_ID,
+          range: `Bookings!${columnLetter(patientMrnColumn)}${bookingRowNumber}`,
+          valueInputOption: 'USER_ENTERED',
+          requestBody: { values: [[nextMrns.join(', ')]] },
+        });
+      }
+    }
+
     // Parse items (optional if uploading ONLY a photo)
     let usageItems: UsageItemInput[] = [];
     if (usageItemsJSON) {
@@ -90,6 +106,10 @@ export async function addBookingUsageAction(formData: FormData) {
 
     if (!hasPhoto && validUsageItems.length === 0) {
       return { success: false, error: 'Please either attach a photo or add at least one used part.' };
+    }
+
+    if (validUsageItems.some(item => item.partNumber && item.setId && !item.trayId)) {
+      // Keep row-level context optional for direct-stock entries; tray is only mandatory when a set was selected for a tray-backed row.
     }
 
     // 📸 1. Process & Upload Photo if present. MRN-less photos stay on the booking until edited/assigned.
@@ -122,14 +142,14 @@ export async function addBookingUsageAction(formData: FormData) {
       }
     }
 
-    // 📦 2. Process Part Consumption into "Usage" sheet (if items were submitted)
-    if (validUsageItems.length > 0 && setId) {
+    // 📦 2. Process row-specific part consumption into the Usage sheet.
+    if (validUsageItems.length > 0) {
       if (!patientMRN) return { success: false, error: 'Patient MRN is required when saving consumed parts.' };
       const rows = validUsageItems.map(item => [
         newUsageId(),
         bookingId,
-        setId,
-        item.trayId,
+        item.setId || '',
+        item.trayId || '',
         item.partNumber,
         '', // LotID
         String(item.qtyUsed),
@@ -139,12 +159,12 @@ export async function addBookingUsageAction(formData: FormData) {
         String(item.qtyRefilled || 0),
         notes,
         photoPath, // Relative photo path reference
-        item.itemId,
+        item.itemId || '',
         new Date().toISOString(),
         '', // Set Delivery Note
         '', // Refill Delivery Note
         item.qtyUsed === item.qtyRefilled ? 'Refilled' : 'Pending to Refill',
-        item.description,
+        item.description || '',
       ]);
 
       const existingUsageRows = await sheets.spreadsheets.values.get({
