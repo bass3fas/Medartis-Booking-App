@@ -13,7 +13,7 @@ import { EnrichedUsage, PatientMRNGroup } from '../types/interfaces';
 import EditUsageModal from './EditUsageModal';
 import AddUsageModal from './AddUsageModal';
 import SelectBookingForUsageModal from './SelectBookingForUsageModal';
-import { deleteUsageAction, refillUsageAction } from '../actions/usageMutationsAction';
+import { deleteBookingUsageByMrnAction, deleteUsageAction, refillUsageAction } from '../actions/usageMutationsAction';
 
 export default function GroupedUsageLogPage() {
   const searchParams = useSearchParams();
@@ -79,6 +79,20 @@ export default function GroupedUsageLogPage() {
       const result = await deleteUsageAction(formData);
       if (result.success) await syncLedger();
       else setErrorMessage(result.error || 'Could not delete usage.');
+    });
+  };
+
+  const deleteMRNUsageBundle = (bookingId: string, mrn: string) => {
+    if (!window.confirm(`Delete the full MRN usage bundle for ${mrn}? This cannot be undone.`)) return;
+    startDeleteTransition(async () => {
+      const formData = new FormData();
+      formData.set('BookingID', bookingId);
+      formData.set('PatientMRN', mrn);
+      formData.set('currentUserRole', currentUserRole);
+      formData.set('currentUserName', currentUserName);
+      const result = await deleteBookingUsageByMrnAction(formData);
+      if (result.success) await syncLedger();
+      else setErrorMessage(result.error || 'Could not delete MRN bundle.');
     });
   };
 
@@ -214,6 +228,11 @@ export default function GroupedUsageLogPage() {
                       <span className="badge badge-sm font-bold border-0 bg-success/10 text-success px-2 py-2">
                         Fully Refilled
                       </span>
+                    )}
+                    {(currentUserRole.trim().toLowerCase() === 'admin' || currentUserRole.trim().toLowerCase() === 'warehouse') && (
+                      <button type="button" onClick={(event) => { event.stopPropagation(); deleteMRNUsageBundle(caseGroup.BookingID, caseGroup.PatientMRN); }} disabled={isDeleting} className="btn btn-ghost btn-xs text-error font-black">
+                        Delete MRN
+                      </button>
                     )}
                     <span className={`transform transition-transform font-black text-sm text-base-content/40 pl-1 ${isExpanded ? 'rotate-90 text-primary' : ''}`}>
                       ▶

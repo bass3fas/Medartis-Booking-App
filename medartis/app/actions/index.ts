@@ -17,4 +17,4 @@ export {
   deleteBookingSetPhotoAction,
   updateBookingAction,
 } from './bookingMutationsAction';
-export { deleteUsageAction, refillUsageAction, updateUsageAction } from './usageMutationsAction';
+export { deleteBookingUsageByMrnAction, deleteUsageAction, refillUsageAction, updateUsageAction } from './usageMutationsAction';
