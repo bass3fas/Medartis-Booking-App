@@ -4,9 +4,10 @@
 import { useState, useEffect, Fragment, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { fetchTraysAndUsageForSet } from '../actions/getSetsAction';
-import type { EnrichedTray, VirtualSet, VirtualUsage } from '../types/interfaces';
+import { updateTraysContentAction } from '../actions/traysMutationsAction';
+import type { EnrichedTray, VirtualSet, VirtualUsage, EnhancedBooking } from '../types/interfaces';
 import { buildAppSheetImageUrl } from '../lib/appsheet-image-url';
-import { EnhancedBooking, fetchBookingsLog } from '../actions/getBookingsAction';
+import { fetchBookingsLog } from '../actions/getBookingsAction';
 
 interface DrawerProps {
   set: VirtualSet | null;
@@ -23,6 +24,7 @@ export default function SetDetailsDrawer({ set, isOpen, onClose }: DrawerProps) 
   const [loading, setLoading] = useState(false);
   const [openTrayId, setOpenTrayId] = useState<string | null>(null);
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
+  const [editPanelItem, setEditPanelItem] = useState<any | null>(null);
   
   // State elements to give instant copy feedback indicators
   const [copiedSetId, setCopiedSetId] = useState(false);
@@ -243,7 +245,7 @@ export default function SetDetailsDrawer({ set, isOpen, onClose }: DrawerProps) 
                             <span>Doctor: {booking.Doctor}</span>
                           </div>
                         </div>
-                        <div className="text-right ml-4 flex-shrink-0">
+                        <div className="text-right ml-4 shrink-0">
                           <span className={`badge badge-sm font-mono font-bold ${
                             booking.Status === 'Returned' ? 'badge-success' :
                             booking.Status === 'Used' || booking.Status === 'Usage Received' ? 'badge-info' :
@@ -327,7 +329,7 @@ export default function SetDetailsDrawer({ set, isOpen, onClose }: DrawerProps) 
                           </div>
 
                         </div>
-                        <div className="text-right ml-4 flex-shrink-0">
+                        <div className="text-right ml-4 shrink-0">
                           <span className="font-mono font-black block">Qty: {log.QtyUsed}</span>
                           <span className={`badge badge-xs font-mono font-bold mt-1 ${log.computedUsageStatus === 'Refilled' ? 'badge-success' : 'badge-warning'}`}>
                             {log.computedUsageStatus}
@@ -402,7 +404,7 @@ export default function SetDetailsDrawer({ set, isOpen, onClose }: DrawerProps) 
                                             {item.PartNumber}
                                           </button>
                                         </td>
-                                        <td className="max-w-[160px] truncate opacity-70">{item.Description}</td>
+                                        <td className="max-w-40 truncate opacity-70">{item.Description}</td>
                                         <td className="text-center font-mono opacity-40">{ideal}</td>
                                         <td className={`text-center font-mono font-black ${isMissing ? 'text-error' : 'text-success'}`}>{current}</td>
                                         <td className="text-right text-[10px] font-bold text-primary font-mono">
@@ -473,6 +475,19 @@ export default function SetDetailsDrawer({ set, isOpen, onClose }: DrawerProps) 
                                                 )}
                                               </div>
 
+                                              {/* --- EDIT BUTTON TO OPEN MINI EDIT PANEL --- */}
+                                              <div className="flex items-center gap-2">
+                                                <button
+                                                  type="button"
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setEditPanelItem(item);
+                                                  }}
+                                                  className="btn btn-xs btn-outline"
+                                                >
+                                                  Edit row
+                                                </button>
+                                              </div>
                                             </div>
                                           </td>
                                         </tr>
@@ -499,6 +514,44 @@ export default function SetDetailsDrawer({ set, isOpen, onClose }: DrawerProps) 
 
         </div>
       </div>
+
+      {/* --- MINI EDIT PANEL OVERLAY INSIDE DRAWER --- */}
+      {editPanelItem && (
+        <div className="absolute right-0 top-0 h-full w-80 bg-base-100 border-l border-base-200 shadow-xl z-60">
+          <div className="p-4 border-b border-base-200 flex items-start justify-between">
+            <div>
+              <h4 className="text-sm font-bold">Edit: {editPanelItem.PartNumber || editPanelItem.ItemID}</h4>
+              <p className="text-[11px] opacity-50 font-mono mt-1">ItemID: {editPanelItem.ItemID}</p>
+            </div>
+            <button className="btn btn-ghost btn-sm btn-circle" onClick={() => setEditPanelItem(null)}>✕</button>
+          </div>
+          <div className="p-4 overflow-y-auto h-full">
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              const form = new FormData(e.currentTarget as HTMLFormElement);
+              form.set('ItemID', editPanelItem.ItemID);
+              const result = await updateTraysContentAction(form as unknown as FormData);
+              if (result.success) {
+                const fresh = await fetchTraysAndUsageForSet((set && set.SetID) || '');
+                if (fresh.success) setTrays(fresh.trays);
+                setEditPanelItem(null);
+              } else {
+                alert(result.error || 'Could not save changes.');
+              }
+            }} className="space-y-3">
+              <label className="form-control"><span className="label-text text-xs font-bold">Part number</span><input name="PartNumber" defaultValue={editPanelItem.PartNumber || ''} className="input input-bordered input-sm" /></label>
+              <label className="form-control"><span className="label-text text-xs font-bold">Lot number</span><input name="LotNumber" defaultValue={editPanelItem.LotNumber || ''} className="input input-bordered input-sm" /></label>
+              <label className="form-control"><span className="label-text text-xs font-bold">Actual quantity</span><input name="ActualQty" type="number" min="0" defaultValue={typeof editPanelItem.ActualQty === 'number' ? editPanelItem.ActualQty : (editPanelItem.ActualQty || '')} className="input input-bordered input-sm" /></label>
+              <label className="form-control"><span className="label-text text-xs font-bold">Notes</span><textarea name="Notes" defaultValue={editPanelItem.Notes || ''} className="textarea textarea-bordered textarea-sm" /></label>
+              <div className="flex justify-end gap-2">
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEditPanelItem(null)}>Cancel</button>
+                <button type="submit" className="btn btn-primary btn-sm">Save</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
