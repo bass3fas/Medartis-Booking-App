@@ -32,6 +32,13 @@ function SetsMatrixContent() {
   // Drawer Control States
   const [selectedSet, setSelectedSet] = useState<VirtualSet | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const getStoredSession = () => {
+    if (typeof window === 'undefined') return { name: 'Guest', role: '' };
+    const token = localStorage.getItem('medartis_session_token');
+    if (!token) return { name: 'Guest', role: '' };
+    try { const session = JSON.parse(token); return { name: session.name || 'Guest', role: session.role || '' }; } catch { return { name: 'Guest', role: '' }; }
+  };
+  const [currentUserRole] = useState(getStoredSession().role);
 
   useEffect(() => {
     async function syncSystemData() {
@@ -216,7 +223,8 @@ function SetsMatrixContent() {
         onClose={() => {
           setIsDrawerOpen(false);
           setSelectedSet(null);
-        }} 
+        }}
+        currentUserRole={currentUserRole}
       />
     </div>
   );

@@ -1042,7 +1042,7 @@ export default function BookingsDashboardPage() {
         onClose={() => setSetPhotoTarget(null)}
         onSuccess={initPage}
       />
-      <SetDetailsDrawer set={drawerTargetSet as VirtualSet | null} isOpen={isSetDrawerOpen} onClose={() => setIsSetDrawerOpen(false)} />
+      <SetDetailsDrawer set={drawerTargetSet as VirtualSet | null} isOpen={isSetDrawerOpen} onClose={() => setIsSetDrawerOpen(false)} currentUserRole={currentUserRole} />
     </div>
   );
 }

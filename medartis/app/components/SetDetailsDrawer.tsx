@@ -13,9 +13,10 @@ interface DrawerProps {
   set: VirtualSet | null;
   isOpen: boolean;
   onClose: () => void;
+  currentUserRole?: string;
 }
 
-export default function SetDetailsDrawer({ set, isOpen, onClose }: DrawerProps) {
+export default function SetDetailsDrawer({ set, isOpen, onClose, currentUserRole = '' }: DrawerProps) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'trays' | 'history' | 'bookings'>('trays');
   const [trays, setTrays] = useState<EnrichedTray[]>([]);
@@ -25,6 +26,7 @@ export default function SetDetailsDrawer({ set, isOpen, onClose }: DrawerProps) 
   const [openTrayId, setOpenTrayId] = useState<string | null>(null);
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
   const [editPanelItem, setEditPanelItem] = useState<any | null>(null);
+  const canEdit = (role?: string) => ['admin', 'warehouse'].includes((role || '').trim().toLowerCase());
   
   // State elements to give instant copy feedback indicators
   const [copiedSetId, setCopiedSetId] = useState(false);
@@ -388,7 +390,7 @@ export default function SetDetailsDrawer({ set, isOpen, onClose }: DrawerProps) 
                                   return (
                                     <Fragment key={item.ItemID}>
                                       <tr 
-                                        onClick={() => setExpandedItemId(isItemExpanded ? null : item.ItemID)}
+                                        onClick={() => setEditPanelItem(item)}
                                         className="hover:bg-base-50 border-b border-base-100 last:border-0 font-medium cursor-pointer transition-colors"
                                       >
                                         <td className="font-mono text-primary font-bold">
@@ -408,7 +410,24 @@ export default function SetDetailsDrawer({ set, isOpen, onClose }: DrawerProps) 
                                         <td className="text-center font-mono opacity-40">{ideal}</td>
                                         <td className={`text-center font-mono font-black ${isMissing ? 'text-error' : 'text-success'}`}>{current}</td>
                                         <td className="text-right text-[10px] font-bold text-primary font-mono">
-                                          {isItemExpanded ? 'Close ▲' : 'History ▼'}
+                                          <div className="flex items-center justify-end gap-2">
+                                            <button
+                                              type="button"
+                                              onClick={(e) => { e.stopPropagation(); setExpandedItemId(isItemExpanded ? null : item.ItemID); }}
+                                              className="btn btn-ghost btn-xs"
+                                            >
+                                              {isItemExpanded ? 'Close' : 'History'}
+                                            </button>
+                                            {canEdit(currentUserRole) && (
+                                              <button
+                                                type="button"
+                                                onClick={(e) => { e.stopPropagation(); setEditPanelItem(item); }}
+                                                className="btn btn-xs btn-outline"
+                                              >
+                                                Edit
+                                              </button>
+                                            )}
+                                          </div>
                                         </td>
                                       </tr>
 
@@ -539,13 +558,16 @@ export default function SetDetailsDrawer({ set, isOpen, onClose }: DrawerProps) 
                 alert(result.error || 'Could not save changes.');
               }
             }} className="space-y-3">
-              <label className="form-control"><span className="label-text text-xs font-bold">Part number</span><input name="PartNumber" defaultValue={editPanelItem.PartNumber || ''} className="input input-bordered input-sm" /></label>
-              <label className="form-control"><span className="label-text text-xs font-bold">Lot number</span><input name="LotNumber" defaultValue={editPanelItem.LotNumber || ''} className="input input-bordered input-sm" /></label>
-              <label className="form-control"><span className="label-text text-xs font-bold">Actual quantity</span><input name="ActualQty" type="number" min="0" defaultValue={typeof editPanelItem.ActualQty === 'number' ? editPanelItem.ActualQty : (editPanelItem.ActualQty || '')} className="input input-bordered input-sm" /></label>
-              <label className="form-control"><span className="label-text text-xs font-bold">Notes</span><textarea name="Notes" defaultValue={editPanelItem.Notes || ''} className="textarea textarea-bordered textarea-sm" /></label>
+              <label className="form-control"><span className="label-text text-xs font-bold">Part number</span><input name="PartNumber" defaultValue={editPanelItem.PartNumber || ''} className="input input-bordered input-sm" disabled={!canEdit(currentUserRole)} /></label>
+              <label className="form-control"><span className="label-text text-xs font-bold">Description</span><input name="Description" defaultValue={editPanelItem.Description || ''} className="input input-bordered input-sm" disabled={!canEdit(currentUserRole)} /></label>
+              <label className="form-control"><span className="label-text text-xs font-bold">Lot number</span><input name="LotNumber" defaultValue={editPanelItem.LotNumber || ''} className="input input-bordered input-sm" disabled={!canEdit(currentUserRole)} /></label>
+              <label className="form-control"><span className="label-text text-xs font-bold">Ideal quantity</span><input name="IdealQty" type="number" min="0" defaultValue={typeof editPanelItem.IdealQty === 'number' ? editPanelItem.IdealQty : (editPanelItem.IdealQty || '')} className="input input-bordered input-sm" disabled={!canEdit(currentUserRole)} /></label>
+              <label className="form-control"><span className="label-text text-xs font-bold">Actual quantity</span><input name="ActualQty" type="number" min="0" defaultValue={typeof editPanelItem.ActualQty === 'number' ? editPanelItem.ActualQty : (editPanelItem.ActualQty || '')} className="input input-bordered input-sm" disabled={!canEdit(currentUserRole)} /></label>
+              <label className="form-control"><span className="label-text text-xs font-bold">Item type</span><input name="ItemType" defaultValue={editPanelItem.ItemType || ''} className="input input-bordered input-sm" disabled={!canEdit(currentUserRole)} /></label>
+              <label className="form-control"><span className="label-text text-xs font-bold">Notes</span><textarea name="Notes" defaultValue={editPanelItem.Notes || ''} className="textarea textarea-bordered textarea-sm" disabled={!canEdit(currentUserRole)} /></label>
               <div className="flex justify-end gap-2">
-                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEditPanelItem(null)}>Cancel</button>
-                <button type="submit" className="btn btn-primary btn-sm">Save</button>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEditPanelItem(null)}>Close</button>
+                {canEdit(currentUserRole) && <button type="submit" className="btn btn-primary btn-sm">Save</button>}
               </div>
             </form>
           </div>
