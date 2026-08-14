@@ -1,6 +1,9 @@
 // lib/googleDrive.ts
 
+import { enqueueDriveRequest } from './driveQueue';
+
 export async function uploadPhotoToDrive(file: File, fileName: string, parentFolderId: string) {
+  return enqueueDriveRequest(async () => {
   try {
     // 1. Convert binary File to Base64
     const arrayBuffer = await file.arrayBuffer();
@@ -38,13 +41,15 @@ export async function uploadPhotoToDrive(file: File, fileName: string, parentFol
       webViewLink: data.url,
       webContentLink: data.url,
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error in Apps Script upload bridge:', error);
-    throw new Error(`Google Drive upload failed: ${error.message}`);
+    throw new Error(`Google Drive upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
+  });
 }
 
 export async function deletePhotoFromDrive(fileIdOrUrl: string) {
+  return enqueueDriveRequest(async () => {
   try {
     if (!fileIdOrUrl || !fileIdOrUrl.trim()) {
       return { success: true, skipped: true };
@@ -66,7 +71,7 @@ export async function deletePhotoFromDrive(fileIdOrUrl: string) {
         if (rawFileName) {
           cleanFileId = decodeURIComponent(rawFileName);
         }
-      } catch (e) {
+      } catch {
         // Fallback cleanup
       }
     }
@@ -92,13 +97,15 @@ export async function deletePhotoFromDrive(fileIdOrUrl: string) {
     }
 
     return { success: true };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error deleting photo via Apps Script:', error);
-    throw new Error(`Google Drive deletion failed: ${error.message}`);
+    throw new Error(`Google Drive deletion failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
+  });
 }
 
 export async function copyPhotoInDrive(fileNameOrPath: string, newFileName: string, targetFolderId: string) {
+  return enqueueDriveRequest(async () => {
   const webAppUrl = process.env.GOOGLE_APPS_SCRIPT_URL;
   if (!webAppUrl) {
     throw new Error('GOOGLE_APPS_SCRIPT_URL is not defined in environment variables.');
@@ -122,4 +129,5 @@ export async function copyPhotoInDrive(fileNameOrPath: string, newFileName: stri
   }
 
   return { id: data.fileId, name: newFileName, webViewLink: data.url };
+  });
 }

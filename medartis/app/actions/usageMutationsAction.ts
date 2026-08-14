@@ -2,6 +2,7 @@
 
 import { sheets, SPREADSHEET_ID } from '../lib/google-sheets';
 import { copyPhotoInDrive, deletePhotoFromDrive } from '../lib/googleDrive';
+import { runDriveRequestsInChunks } from '../lib/driveQueue';
 
 const USAGE_FIELDS = ['PatientMRN', 'SetID', 'TrayID', 'PartNumber', 'QtyUsed', 'Qty Refilled', 'Date', 'Notes', 'Photo'] as const;
 
@@ -155,7 +156,7 @@ export async function fetchBookingUsageContextAction(formData: FormData) {
       };
     }).filter(Boolean);
 
-    const normalisedRows = selectedRows.map((row: any) => ({
+    const normalisedRows = selectedRows.map((row) => ({
       usageId: row.UsageID,
       trayId: row.TrayID,
       partNumber: row.PartNumber,
@@ -187,7 +188,7 @@ export async function fetchBookingUsageContextAction(formData: FormData) {
       data: {
         setId: normalisedRows[0]?.setId || '',
         items: normalisedRows,
-        usageIds: normalisedRows.map((item: any) => item.usageId).filter(Boolean),
+        usageIds: normalisedRows.map((item) => item.usageId).filter(Boolean),
         photoPath: matchedPhoto || '',
         photoUrl: matchedPhoto ? `https://www.appsheet.com/image/getimageurl?appName=MedartisPhase1-5435197&tableName=Usage%20Photos&fileName=${encodeURIComponent(matchedPhoto)}&width=1000` : '',
       }
@@ -286,7 +287,6 @@ export async function deleteBookingUsageByMrnAction(formData: FormData) {
     const [usageHeaders = [], ...usageRows] = usageResponse.data.values || [];
     const bookingColumn = usageHeaders.indexOf('BookingID');
     const mrnColumn = usageHeaders.indexOf('PatientMRN');
-    const usageIdColumn = usageHeaders.indexOf('UsageID');
     const photoColumn = usageHeaders.indexOf('Photo');
 
     if (bookingColumn === -1 || mrnColumn === -1) {
@@ -346,10 +346,13 @@ export async function deleteBookingUsageByMrnAction(formData: FormData) {
     // 4. Combine all photo paths (Usage sheet + Usage Photos sheet) and delete from Google Drive
     const allPhotoPaths = Array.from(new Set([...usagePhotoPaths, ...photosFromPhotoSheet]));
 
-    for (const photoPath of allPhotoPaths) {
-      await deletePhotoFromDrive(photoPath.split('/').pop() || photoPath)
-        .catch((error) => console.warn('Usage photo drive delete failed:', error));
-    }
+    const driveDeleteResults = await runDriveRequestsInChunks(
+      allPhotoPaths.map((photoPath) => () => deletePhotoFromDrive(photoPath.split('/').pop() || photoPath)),
+      3,
+    );
+    driveDeleteResults.forEach((result) => {
+      if (result.status === 'rejected') console.warn('Usage photo drive delete failed:', result.reason);
+    });
 
     // 5. Cleanup references inside 'Bookings' sheet
     const bookingResponse = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: 'Bookings!A1:Z' });

@@ -31,7 +31,7 @@ function buildAppSheetImageUrl(fileName: string): string {
   return `https://www.appsheet.com/image/getimageurl?appName=MedartisPhase1-5435197&tableName=Usage%20Photos&fileName=${encodedFile}&width=1000`;
 }
 
-export async function fetchUsageLog(): Promise<{ success: boolean; data: PatientMRNGroup[]; error?: string }> {
+export async function fetchUsageLog(page: number = 1, limit: number = 20): Promise<{ success: boolean; data: PatientMRNGroup[]; hasMore: boolean; page: number; error?: string }> {
   try {
     const [rawUsages, rawPhotos, rawParts] = await Promise.all([
       getSheetRows('Usage!A1:Z'),
@@ -39,7 +39,7 @@ export async function fetchUsageLog(): Promise<{ success: boolean; data: Patient
       getSheetRows('PartsMaster!A1:Z')
     ]);
 
-    if (rawUsages.length < 2) return { success: true, data: [] };
+    if (rawUsages.length < 2) return { success: true, data: [], hasMore: false, page };
 
     // 1. Build PartsMaster Map (Keep as is...)
     const partsDescriptionMap: { [partNumber: string]: string } = {};
@@ -77,7 +77,7 @@ export async function fetchUsageLog(): Promise<{ success: boolean; data: Patient
     });
 
     // 3. Parse standalone Usage Photos (Keep as is...)
-    let photoList: any[] = [];
+    let photoList: Array<Record<string, string>> = [];
     if (rawPhotos.length >= 2) {
       const [photoHeaders, ...photoRows] = rawPhotos;
       photoList = photoRows.map((row: string[]) => {
@@ -169,9 +169,17 @@ export async function fetchUsageLog(): Promise<{ success: boolean; data: Patient
       return dateA === 0 ? 1 : -1;
     });
 
-    return { success: true, data: sortedGroups };
-  } catch (err: any) {
+    const startIndex = (page - 1) * limit;
+    const paginatedGroups = sortedGroups.slice(startIndex, startIndex + limit);
+
+    return {
+      success: true,
+      data: paginatedGroups,
+      hasMore: startIndex + limit < sortedGroups.length,
+      page,
+    };
+  } catch (err: unknown) {
     console.error(err);
-    return { success: false, data: [], error: err.message };
+    return { success: false, data: [], hasMore: false, page, error: err instanceof Error ? err.message : 'Failed to fetch usage log.' };
   }
 }
