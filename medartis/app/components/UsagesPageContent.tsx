@@ -1,89 +1,126 @@
 // app/components/UsagesPageContent.tsx
 'use client';
 
-import { useState, useEffect, useCallback, useTransition } from 'react';
+import { useState, useEffect, useMemo, useRef, useTransition } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { fetchUsageLog } from '../actions/getUsagesAction';
 import { fetchBookingsLog } from '../actions/getBookingsAction';
 import type { EnhancedBooking } from '../types/interfaces';
 import { fetchEnrichedSets } from '../actions/getSetsAction';
-import type { VirtualSet } from '../types/interfaces';
 import { EnrichedUsage, PatientMRNGroup } from '../types/interfaces';
 import EditUsageModal from './EditUsageModal';
 import AddUsageModal from './AddUsageModal';
 import SelectBookingForUsageModal from './SelectBookingForUsageModal';
 import { deleteBookingUsageByMrnAction, deleteUsageAction, refillUsageAction } from '../actions/usageMutationsAction';
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useUsageUiStore } from '../store/usageUiStore';
 
 export default function GroupedUsageLogPage() {
   const searchParams = useSearchParams();
-  const [cases, setCases] = useState<PatientMRNGroup[]>([]);
-  const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
+  const queryClient = useQueryClient();
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   // Filtering Options
   const [searchQuery, setSearchQuery] = useState('');
   const [hospitalFilter, setHospitalFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'Refilled' | 'Pending to Refill'>('all'); // 🔄 Restored
-  const [expandedCaseKey, setExpandedCaseKey] = useState<string | null>(null);
+  const { expandedCaseKey, setExpandedCaseKey } = useUsageUiStore();
   const [editingUsage, setEditingUsage] = useState<EnrichedUsage | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState('');
   const [currentUserName, setCurrentUserName] = useState('');
   const [isDeleting, startDeleteTransition] = useTransition();
-  const [bookings, setBookings] = useState<EnhancedBooking[]>([]);
-  const [availableSets, setAvailableSets] = useState<VirtualSet[]>([]);
+  const { data: bookingsResult } = useQuery({ queryKey: ['bookingsLog'], queryFn: fetchBookingsLog, staleTime: 1000 * 60 * 10 });
+  const { data: setsResult } = useQuery({ queryKey: ['enrichedSets'], queryFn: fetchEnrichedSets, staleTime: 1000 * 60 * 10 });
   const [isBookingPickerOpen, setIsBookingPickerOpen] = useState(false);
   const [usageBooking, setUsageBooking] = useState<EnhancedBooking | null>(null);
+
+  const bookings = bookingsResult?.success ? bookingsResult.data : [];
+  const availableSets = setsResult?.success ? setsResult.data : [];
+  const { data: usagePages, isLoading: loading, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
+    queryKey: ['usageRecords'],
+    queryFn: ({ pageParam = 1 }) => fetchUsageLog(pageParam, 20),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage: Awaited<ReturnType<typeof fetchUsageLog>>, allPages: Awaited<ReturnType<typeof fetchUsageLog>>[]) => lastPage.hasMore ? allPages.length + 1 : undefined,
+  });
+  const cases = useMemo<PatientMRNGroup[]>(() => usagePages?.pages.flatMap((page: Awaited<ReturnType<typeof fetchUsageLog>>) => page.data) || [], [usagePages]);
 
   const canManageCase = (bookingId: string) => {
     const role = currentUserRole.trim().toLowerCase();
     if (role === 'admin' || role === 'warehouse') return true;
-    if (role === 'sales') return bookings.find((booking) => booking.BookingID === bookingId)?.Salesperson?.trim().toLowerCase() === currentUserName.trim().toLowerCase();
+    if (role === 'sales') return bookings.find((booking: EnhancedBooking) => booking.BookingID === bookingId)?.Salesperson?.trim().toLowerCase() === currentUserName.trim().toLowerCase();
     return false;
   };
-
-  const syncLedger = useCallback(async () => {
-    setLoading(true);
-    const res = await fetchUsageLog();
-    if (res.success) setCases(res.data);
-    else setErrorMessage(res.error || 'Failed to populate case group logs.');
-    setLoading(false);
-  }, []);
 
   useEffect(() => {
     const mrn = searchParams.get('mrn');
     if (mrn) {
-      setSearchQuery(mrn);
-      setExpandedCaseKey(null);
+      queueMicrotask(() => {
+        setSearchQuery(mrn);
+        setExpandedCaseKey(null);
+      });
     }
-  }, [searchParams]);
+  }, [searchParams, setExpandedCaseKey]);
 
   useEffect(() => {
-    syncLedger();
-    fetchBookingsLog().then((result) => { if (result.success) setBookings(result.data); });
-    fetchEnrichedSets().then((result) => { if (result.success) setAvailableSets(result.data); });
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0]?.isIntersecting && hasNextPage && !isFetchingNextPage) fetchNextPage();
+    });
+    const current = loadMoreRef.current;
+    if (current) observer.observe(current);
+    return () => {
+      if (current) observer.unobserve(current);
+    };
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
+
+  useEffect(() => {
     try {
       const session = JSON.parse(localStorage.getItem('medartis_session_token') || '{}');
-      setCurrentUserRole(session.role || '');
-      setCurrentUserName(session.name || '');
-    } catch { setCurrentUserRole(''); }
-  }, [syncLedger]);
+      queueMicrotask(() => {
+        setCurrentUserRole(session.role || '');
+        setCurrentUserName(session.name || '');
+      });
+    } catch { queueMicrotask(() => setCurrentUserRole('')); }
+  }, []);
+
+  const setUsageCache = (updater: (groups: PatientMRNGroup[]) => PatientMRNGroup[]) => {
+    queryClient.setQueryData<{ pages: Array<Awaited<ReturnType<typeof fetchUsageLog>>> }>(['usageRecords'], (oldData) => {
+      if (!oldData?.pages) return oldData;
+      const nextGroups = updater(oldData.pages.flatMap((page) => page.data));
+      let cursor = 0;
+      return {
+        ...oldData,
+        pages: oldData.pages.map((page) => {
+          const data = nextGroups.slice(cursor, cursor + page.data.length);
+          cursor += page.data.length;
+          return { ...page, data };
+        }),
+      };
+    });
+  };
 
   const deleteUsage = (usageId: string) => {
     if (!window.confirm('Delete this usage entry? This cannot be undone.')) return;
+    const previous = queryClient.getQueryData(['usageRecords']);
+    setUsageCache((groups) => groups.map((group) => ({ ...group, items: group.items.filter((item: EnrichedUsage) => item.UsageID !== usageId) })).filter((group) => group.items.length > 0 || group.photos.length > 0));
     startDeleteTransition(async () => {
       const formData = new FormData();
       formData.set('UsageID', usageId);
       formData.set('currentUserRole', currentUserRole);
       formData.set('currentUserName', currentUserName);
       const result = await deleteUsageAction(formData);
-      if (result.success) await syncLedger();
-      else setErrorMessage(result.error || 'Could not delete usage.');
+      if (!result.success) {
+        queryClient.setQueryData(['usageRecords'], previous);
+        setErrorMessage(result.error || 'Could not delete usage.');
+      }
     });
   };
 
   const deleteMRNUsageBundle = (bookingId: string, mrn: string) => {
     if (!window.confirm(`Delete the full MRN usage bundle for ${mrn}? This cannot be undone.`)) return;
+    const previous = queryClient.getQueryData(['usageRecords']);
+    setUsageCache((groups) => groups.filter((group) => !(group.BookingID === bookingId && group.PatientMRN === mrn)));
     startDeleteTransition(async () => {
       const formData = new FormData();
       formData.set('BookingID', bookingId);
@@ -91,24 +128,35 @@ export default function GroupedUsageLogPage() {
       formData.set('currentUserRole', currentUserRole);
       formData.set('currentUserName', currentUserName);
       const result = await deleteBookingUsageByMrnAction(formData);
-      if (result.success) await syncLedger();
-      else setErrorMessage(result.error || 'Could not delete MRN bundle.');
+      if (!result.success) {
+        queryClient.setQueryData(['usageRecords'], previous);
+        setErrorMessage(result.error || 'Could not delete MRN bundle.');
+      }
     });
   };
 
   const refillUsage = (usageIds: string[]) => {
     const message = usageIds.length === 1 ? 'Mark this usage line as fully refilled?' : `Mark all ${usageIds.length} usage lines for this MRN as fully refilled?`;
     if (!window.confirm(message)) return;
+    const previous = queryClient.getQueryData(['usageRecords']);
+    setUsageCache((groups) => groups.map((group) => ({
+      ...group,
+      items: group.items.map((item) => usageIds.includes(item.UsageID) ? { ...item, 'Qty Refilled': item.QtyUsed, computedUsageStatus: 'Refilled' } : item),
+    })));
     startDeleteTransition(async () => {
       const formData = new FormData();
       formData.set('UsageIDs', JSON.stringify(usageIds));
       formData.set('currentUserRole', currentUserRole);
       formData.set('currentUserName', currentUserName);
       const result = await refillUsageAction(formData);
-      if (result.success) await syncLedger();
-      else setErrorMessage(result.error || 'Could not refill usage.');
+      if (!result.success) {
+        queryClient.setQueryData(['usageRecords'], previous);
+        setErrorMessage(result.error || 'Could not refill usage.');
+      }
     });
   };
+
+  const syncLedger = () => queryClient.invalidateQueries({ queryKey: ['usageRecords'] });
 
   const uniqueHospitals = Array.from(new Set(cases.map(c => c.Hospital).filter(Boolean))).sort();
 
@@ -159,7 +207,7 @@ export default function GroupedUsageLogPage() {
         {/* 🔄 Re-injected Status Filter Control Dropdown */}
         <select 
           value={statusFilter} 
-          onChange={(e) => setStatusFilter(e.target.value as any)} 
+          onChange={(e) => setStatusFilter(e.target.value as 'all' | 'Refilled' | 'Pending to Refill')} 
           className="select select-sm select-bordered font-semibold text-xs bg-base-50"
         >
           <option value="all">All Case Statuses</option>
@@ -246,7 +294,7 @@ export default function GroupedUsageLogPage() {
                     
                     {/* LEFT PANEL: Consumption Table Ledger Rows */}
                     <div className="lg:col-span-7 space-y-2">
-                      <div className="flex items-center justify-between gap-3"><p className="text-[10px] font-mono uppercase font-black opacity-40 tracking-wider">Consumed Implant Element Specifications</p>{canManageCase(caseGroup.BookingID) && <button type="button" onClick={() => refillUsage(cases.filter((group) => group.PatientMRN === caseGroup.PatientMRN).flatMap((group) => group.items).filter((item) => item.computedUsageStatus !== 'Refilled').map((item) => item.UsageID))} disabled={isDeleting || !cases.some((group) => group.PatientMRN === caseGroup.PatientMRN && group.items.some((item) => item.computedUsageStatus !== 'Refilled'))} className="btn btn-outline btn-success btn-xs">Refill all MRN</button>}</div>
+                      <div className="flex items-center justify-between gap-3"><p className="text-[10px] font-mono uppercase font-black opacity-40 tracking-wider">Consumed Implant Element Specifications</p>{canManageCase(caseGroup.BookingID) && <button type="button" onClick={() => refillUsage(cases.filter((group: PatientMRNGroup) => group.PatientMRN === caseGroup.PatientMRN).flatMap((group: PatientMRNGroup) => group.items).filter((item: EnrichedUsage) => item.computedUsageStatus !== 'Refilled').map((item: EnrichedUsage) => item.UsageID))} disabled={isDeleting || !cases.some((group: PatientMRNGroup) => group.PatientMRN === caseGroup.PatientMRN && group.items.some((item: EnrichedUsage) => item.computedUsageStatus !== 'Refilled'))} className="btn btn-outline btn-success btn-xs">Refill all MRN</button>}</div>
                       <div className="border border-base-300 rounded-xl overflow-hidden bg-base-100 max-h-72 overflow-y-auto shadow-sm">
                         <table className="table table-compact w-full text-xs font-mono">
                           <thead className="bg-base-100 border-b opacity-60 text-[10px] uppercase font-black">
@@ -326,9 +374,10 @@ export default function GroupedUsageLogPage() {
               </div>
             );
           })}
+          <div ref={loadMoreRef} className="py-6 text-center text-[10px] font-mono uppercase opacity-50">{isFetchingNextPage ? 'Loading more usage records…' : hasNextPage ? 'Scroll to load more' : 'All visible usage records loaded'}</div>
         </div>
       )}
-      <EditUsageModal usage={editingUsage} booking={bookings.find((booking) => booking.BookingID === editingUsage?.BookingID) || null} currentUserRole={currentUserRole} currentUserName={currentUserName} onClose={() => setEditingUsage(null)} onSuccess={syncLedger} />
+      <EditUsageModal usage={editingUsage} booking={bookings.find((booking: EnhancedBooking) => booking.BookingID === editingUsage?.BookingID) || null} currentUserRole={currentUserRole} currentUserName={currentUserName} onClose={() => setEditingUsage(null)} onSuccess={syncLedger} />
       {isBookingPickerOpen && <SelectBookingForUsageModal bookings={bookings} onClose={() => setIsBookingPickerOpen(false)} onSelect={(booking) => { setUsageBooking(booking); setIsBookingPickerOpen(false); }} />}
       <AddUsageModal isOpen={Boolean(usageBooking)} booking={usageBooking} availableSets={availableSets} onClose={() => setUsageBooking(null)} onSuccess={syncLedger} currentUserName={currentUserName} currentUserRole={currentUserRole} />
     </div>
