@@ -66,6 +66,53 @@ async function findUsageRow(usageId: string) {
   return { headers, row: rows[rowOffset], rowNumber: rowOffset + 2 };
 }
 
+async function updateStockForUsageRefill(usageId: string, partNumber: string, newRefilledQty: number) {
+  const stockSheetName = 'Stock';
+  const stockSheet = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `${stockSheetName}!A:Z` });
+  const [stockHeaders = [], ...stockRows] = stockSheet.data.values || [];
+  const stockGtinColumn = stockHeaders.indexOf('GTIN');
+  const stockItemCodeColumn = stockHeaders.indexOf('Item Code');
+  const stockQtyColumn = stockHeaders.indexOf('Qty');
+  const stockExpiryDateColumn = stockHeaders.indexOf('Expiry Date');
+
+  if (stockGtinColumn === -1) {
+    console.error('Stock sheet is missing GTIN column.');
+    return;
+  }
+
+  // Find and delete any previous refill record for this usageId
+  const rowIndexToDelete = stockRows.findIndex(row => text(row[stockGtinColumn]) === usageId);
+  if (rowIndexToDelete !== -1) {
+    const rowNum = rowIndexToDelete + 2; // +1 for header, +1 for 0-based index
+    // Using batchUpdate with deleteDimension is more reliable for deleting rows than clear.
+    const sheetId = (await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID })).data.sheets?.find(s => s.properties?.title === stockSheetName)?.properties?.sheetId;
+    if (sheetId !== undefined) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: SPREADSHEET_ID,
+        requestBody: {
+          requests: [{ deleteDimension: { range: { sheetId, dimension: 'ROWS', startIndex: rowNum - 1, endIndex: rowNum } } }]
+        }
+      });
+    }
+  }
+
+  // If the new refill quantity is positive, add a new stock deduction record
+  if (newRefilledQty > 0) {
+    const stockRow = new Array(stockHeaders.length).fill('');
+    stockRow[stockGtinColumn] = usageId;
+    if (stockItemCodeColumn !== -1) stockRow[stockItemCodeColumn] = partNumber;
+    if (stockQtyColumn !== -1) stockRow[stockQtyColumn] = -newRefilledQty;
+    if (stockExpiryDateColumn !== -1) stockRow[stockExpiryDateColumn] = new Date().toLocaleDateString('en-GB');
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${stockSheetName}!A:A`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [stockRow] },
+    });
+  }
+}
+
 export async function fetchBookingUsageContextAction(formData: FormData) {
   try {
     if (!SPREADSHEET_ID) throw new Error('GOOGLE_SPREADSHEET_ID environment variable is missing or undefined.');
@@ -201,6 +248,10 @@ export async function updateUsageAction(formData: FormData) {
     const lastUpdateColumn = headers.indexOf('Last Update');
     if (statusColumn !== -1) nextRow[statusColumn] = used === refilled ? 'Refilled' : 'Pending to Refill';
     if (lastUpdateColumn !== -1) nextRow[lastUpdateColumn] = new Date().toISOString();
+
+    // Update stock deduction: delete old record and create new one with the new refilled quantity.
+    const partNumber = nextRow[headers.indexOf('PartNumber')];
+    await updateStockForUsageRefill(usageId, partNumber, refilled);
 
     if (photoColumn !== -1 && oldPhoto && oldPhoto !== incomingPhoto) {
       await deletePhotoFromDrive(oldPhoto.split('/').pop() || oldPhoto).catch((error) => console.warn('Previous usage photo drive delete failed during edit:', error));
@@ -383,15 +434,24 @@ export async function refillUsageAction(formData: FormData) {
     const usedColumn = headers.indexOf('QtyUsed');
     const refilledColumn = headers.indexOf('Qty Refilled');
     const statusColumn = headers.indexOf('Usage Status');
+    const partNumberColumn = headers.indexOf('PartNumber');
     const updatedColumn = headers.indexOf('Last Update');
-    if (usageIdColumn === -1 || usedColumn === -1 || refilledColumn === -1) throw new Error('Usage sheet is missing refill columns.');
+    if (usageIdColumn === -1 || usedColumn === -1 || refilledColumn === -1 || partNumberColumn === -1) throw new Error('Usage sheet is missing refill columns.');
+
     const values = rows.map((row, index) => ({ row, rowNumber: index + 2 })).filter(({ row }) => usageIds.includes(String(row[usageIdColumn] ?? '').trim())).map(({ row, rowNumber }) => {
       const nextRow = headers.map((_, index) => row[index] ?? '');
-      nextRow[refilledColumn] = nextRow[usedColumn] ?? '0';
+      const qtyToRefill = Number(nextRow[usedColumn] ?? '0');
+      nextRow[refilledColumn] = String(qtyToRefill);
       if (statusColumn !== -1) nextRow[statusColumn] = 'Refilled';
       if (updatedColumn !== -1) nextRow[updatedColumn] = new Date().toISOString();
+      
+      const usageId = nextRow[usageIdColumn];
+      const partNumber = nextRow[partNumberColumn];
+      updateStockForUsageRefill(usageId, partNumber, qtyToRefill);
+      
       return { range: `Usage!A${rowNumber}:S${rowNumber}`, values: [nextRow.slice(0, 19)] };
     });
+
     await Promise.all(values.map(({ range, values }) => sheets.spreadsheets.values.update({ spreadsheetId: SPREADSHEET_ID, range, valueInputOption: 'USER_ENTERED', requestBody: { values } })));
     return { success: true, message: `${values.length} usage entr${values.length === 1 ? 'y' : 'ies'} refilled.` };
   } catch (error: unknown) {
