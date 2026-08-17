@@ -6,6 +6,7 @@ import Link from 'next/link';
 
 export default function SidebarNav() {
   const [operatorName, setOperatorName] = useState('Operator');
+  const [operatorRole, setOperatorRole] = useState('');
 
   useEffect(() => {
     // Isolated logic block to pull and handle local token mapping
@@ -17,6 +18,7 @@ export default function SidebarNav() {
           if (session.name) {
             setOperatorName(session.name);
           }
+          setOperatorRole(session.role || '');
         } catch (e) {
           console.error('Failed to parse session token for sidebar greeting', e);
         }
@@ -102,6 +104,12 @@ export default function SidebarNav() {
               Operations
             </span>
             <nav className="flex flex-col gap-1">
+              {operatorRole.trim().toLowerCase() === 'admin' && (
+              <Link href="/historylog" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-bold tracking-tight hover:bg-base-200 transition-colors">
+                <span className="h-4 w-4 opacity-70 shrink-0">⏱</span>
+                <span>History Log</span>
+              </Link>
+              )}
               <Link href="/usages" className="flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-bold tracking-tight hover:bg-base-200 transition-colors">
                 <div className="flex items-center gap-3">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 opacity-70 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">

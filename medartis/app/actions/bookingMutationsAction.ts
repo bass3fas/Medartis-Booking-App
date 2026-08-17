@@ -6,6 +6,8 @@ import { z } from 'zod';
 import { uploadPhotoToDrive, deletePhotoFromDrive } from '../lib/googleDrive';
 import { sheets, SPREADSHEET_ID } from '../lib/google-sheets';
 import type { EnhancedBooking } from '../types/interfaces';
+import { writeHistoryLog } from '../lib/history-log';
+import { sendNotificationEmail } from '../lib/email';
 
 const BOOKING_HEADERS = [
   'BookingID',
@@ -37,7 +39,7 @@ const SALES_FIELDS = new Set<string>([
 ]);
 const WAREHOUSE_FIELDS = new Set<string>(['Status', 'Selected Sets']);
 
-type MutationContext = { currentUserName: string; currentUserRole: string };
+type MutationContext = { currentUserName: string; currentUserRole: string; currentUserEmail?: string };
 
 function normalize(value: unknown): string { return String(value ?? '').trim(); }
 function normalizeRole(value: unknown): string { return normalize(value).toLowerCase(); }
@@ -175,7 +177,7 @@ async function syncBookingSets(bookingId: string, newSetIds: string[]) {
 export async function updateBookingAction(formData: FormData) {
   try {
     const bookingId = normalize(formData.get('BookingID'));
-    const context = { currentUserName: normalize(formData.get('currentUserName')), currentUserRole: normalize(formData.get('currentUserRole')) };
+    const context = { currentUserName: normalize(formData.get('currentUserName')), currentUserRole: normalize(formData.get('currentUserRole')), currentUserEmail: normalize(formData.get('currentUserEmail')) };
     if (!bookingId) return { success: false, error: 'Booking ID is required.' };
 
     // First, fetch the existing booking and check permissions
@@ -203,7 +205,11 @@ export async function updateBookingAction(formData: FormData) {
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: [nextRow] },
     });
-    return { success: true, message: `Booking ${bookingId} updated successfully.` };
+    await writeHistoryLog({ targetTable: 'Bookings', targetRowId: bookingId, actionType: 'UPDATE', previousData: booking, newData: nextBooking, actor: { name: context.currentUserName, email: context.currentUserEmail, role: context.currentUserRole } });
+    if (normalize(booking.Status).toLowerCase() !== 'delivered' && normalize(nextBooking.Status).toLowerCase() === 'delivered') {
+      await sendNotificationEmail({ to: process.env.WAREHOUSE_EMAIL || process.env.SMTP_USER || '', subject: `Booking ${bookingId} delivered`, html: `<p>Booking <strong>${bookingId}</strong> is now Delivered.</p><p>Salesperson: ${nextBooking.Salesperson || 'N/A'}</p><p>Hospital: ${nextBooking.Hospital || 'N/A'}</p>` });
+    }
+    return { success: true, message: `Booking ${bookingId} updated successfully.`, notification: normalize(nextBooking.Status).toLowerCase() === 'delivered' ? `Booking ${bookingId} is Delivered.` : undefined };
   } catch (error: unknown) {
     console.error('Update booking failed:', error);
     const message = error instanceof Error ? error.message : 'Failed to update booking.';
@@ -231,7 +237,7 @@ export async function addBookingSetPhotoAction(formData: FormData) {
     }
 
     const { BookingID, SetID, photo } = validation.data;
-    const context = { currentUserName: normalize(formData.get('currentUserName')), currentUserRole: normalize(formData.get('currentUserRole')) };
+    const context = { currentUserName: normalize(formData.get('currentUserName')), currentUserRole: normalize(formData.get('currentUserRole')), currentUserEmail: normalize(formData.get('currentUserEmail')) };
 
     console.log(`Attempting to add photo for BookingID: ${BookingID}, SetID: ${SetID}`);
 
@@ -307,7 +313,7 @@ export async function deleteBookingSetPhotoAction(formData: FormData) {
     if (!validation.success) return { success: false, error: 'Booking ID, Set ID, and Photo Filename are required.' };
 
     const { BookingID, SetID, photoFileName } = validation.data;
-    const context = { currentUserName: normalize(formData.get('currentUserName')), currentUserRole: normalize(formData.get('currentUserRole')) };
+    const context = { currentUserName: normalize(formData.get('currentUserName')), currentUserRole: normalize(formData.get('currentUserRole')), currentUserEmail: normalize(formData.get('currentUserEmail')) };
 
     const { booking } = await findBookingRow(BookingID);
     if (!canUpdateBooking(booking, context)) return { success: false, error: 'You do not have permission to delete set photos.' };
@@ -373,11 +379,12 @@ export async function deleteBookingSetPhotoAction(formData: FormData) {
 export async function deleteBookingAction(formData: FormData) {
   try {
     const bookingId = normalize(formData.get('BookingID'));
-    const context = { currentUserName: normalize(formData.get('currentUserName')), currentUserRole: normalize(formData.get('currentUserRole')) };
+    const context = { currentUserName: normalize(formData.get('currentUserName')), currentUserRole: normalize(formData.get('currentUserRole')), currentUserEmail: normalize(formData.get('currentUserEmail')) };
     if (!bookingId) return { success: false, error: 'Booking ID is required.' };
-    const { rowNumber } = await findBookingRow(bookingId);
+    const { rowNumber, booking } = await findBookingRow(bookingId);
     if (normalizeRole(context.currentUserRole) !== 'admin') return { success: false, error: 'Only Admin users can delete bookings.' };
     await sheets.spreadsheets.values.clear({ spreadsheetId: SPREADSHEET_ID, range: `Bookings!A${rowNumber}:S${rowNumber}` });
+    await writeHistoryLog({ targetTable: 'Bookings', targetRowId: bookingId, actionType: 'DELETE', previousData: booking, newData: null, actor: { name: context.currentUserName, email: context.currentUserEmail, role: context.currentUserRole } });
     return { success: true, message: `Booking ${bookingId} deleted successfully.` };
   } catch (error: unknown) {
     console.error('Delete booking failed:', error);

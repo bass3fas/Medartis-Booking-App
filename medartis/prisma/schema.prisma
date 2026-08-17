@@ -28,11 +28,14 @@ model User {
 model HistoryLog {
   id           String   @id @default(uuid())
   timestamp    DateTime @default(now())
-  targetTable  String   
-  targetRowId  String   
-  actionType   String   
-  previousData String   @db.Text 
-  newData      String   @db.Text 
-  userId       String
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  targetTable  String
+  targetRowId  String
+  actionType   String
+  previousData String   @db.Text
+  newData      String   @db.Text
+  actorName    String
+  actorEmail   String?
+  actorRole    String?
+  userId       String?
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 }

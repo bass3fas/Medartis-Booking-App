@@ -114,6 +114,9 @@ export default function AddBookingModal({
     setError(null);
 
     const formData = new FormData(e.currentTarget);
+    formData.set('currentUserName', currentUserName || '');
+    formData.set('currentUserRole', currentUserRole || '');
+    try { formData.set('currentUserEmail', JSON.parse(localStorage.getItem('medartis_session_token') || '{}').email || ''); } catch {}
 
     startTransition(async () => {
       console.log('Sending structured layout to server...');
@@ -122,6 +125,10 @@ export default function AddBookingModal({
       console.log('Server Action Result:', result);
 
       if (result.success) {
+        if (result.notification && 'Notification' in window) {
+          if (Notification.permission === 'granted') new Notification(result.notification);
+          else if (Notification.permission !== 'denied') Notification.requestPermission().then((permission) => { if (permission === 'granted') new Notification(result.notification!); });
+        }
         setRequestedSets([]); // Clear selected sets state tracking
         onSuccess();
         onClose();

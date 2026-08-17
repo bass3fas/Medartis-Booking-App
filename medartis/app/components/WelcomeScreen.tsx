@@ -71,6 +71,7 @@ export default function WelcomeScreen() {
       'medartis_session_token', 
       JSON.stringify({ 
         user: result.user?.email, 
+        email: result.user?.email,
         name: result.user?.name, 
         role: result.user?.role, 
         expiresAt: expiryTime 

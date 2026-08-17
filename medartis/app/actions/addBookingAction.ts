@@ -4,6 +4,8 @@
 import { sheets, SPREADSHEET_ID } from '../lib/google-sheets';
 import { z } from 'zod';
 import crypto from 'crypto';
+import { writeHistoryLog } from '../lib/history-log';
+import { sendNotificationEmail } from '../lib/email';
 
 // 1. Precise Validation Schema matching your field structures
 const AddBookingSchema = z.object({
@@ -17,6 +19,9 @@ const AddBookingSchema = z.object({
   Type: z.string().optional().default('Standard'),
   SpecialRequest: z.string().optional().default(''),
   'Requested Sets': z.string().optional().default(''),
+  currentUserName: z.string().optional().default(''),
+  currentUserEmail: z.string().optional().default(''),
+  currentUserRole: z.string().optional().default(''),
 });
 
 // Helper function to generate a short, random alphanumeric string for Booking ID (e.g., B-a1B2)
@@ -110,9 +115,26 @@ export async function addBookingAction(formData: FormData) {
 
     console.log('✅ Google Sheets Write Successful:', response.statusText);
 
+    const bookingSnapshot = Object.fromEntries([
+      'BookingID', 'Salesperson', 'Hospital', 'Doctor', 'CaseDate', 'CaseTime', 'Deliver Before',
+      'Special Request', 'Status', 'Requested Sets', 'Selected Sets', 'Last Updated', 'Driver',
+      'UsagePhoto', 'UsagePhoto2', 'Patient MRN', 'Delivery Note', 'Delivery Note Link', 'Type'
+    ].map((header, index) => [header, newRow[index] ?? '']));
+    await writeHistoryLog({ targetTable: 'Bookings', targetRowId: newBookingID, actionType: 'CREATE', previousData: null, newData: bookingSnapshot, actor: { name: data.currentUserName, email: data.currentUserEmail, role: data.currentUserRole } });
+
+    const warehouseEmail = process.env.WAREHOUSE_EMAIL;
+    if (warehouseEmail) {
+      await sendNotificationEmail({
+        to: warehouseEmail,
+        subject: `New booking ${newBookingID} created`,
+        html: `<h2>New Booking ${newBookingID}</h2><p><strong>Salesperson:</strong> ${data.Salesperson}</p><p><strong>Hospital:</strong> ${data.Hospital}</p><p><strong>Doctor:</strong> ${data.Doctor}</p><p><strong>Case:</strong> ${data.CaseDate} ${data.CaseTime}</p><p><strong>Deliver Before:</strong> ${deliverBefore || 'N/A'}</p><p><strong>Requested Sets:</strong> ${data['Requested Sets'] || 'N/A'}</p><p><strong>Special Request:</strong> ${data.SpecialRequest || 'N/A'}</p>`,
+      });
+    }
+
     return { 
       success: true, 
-      message: `Booking ${newBookingID} created successfully.` 
+      message: `Booking ${newBookingID} created successfully.`,
+      notification: `New booking ${newBookingID} was created.`
     };
 
   } catch (error: unknown) {

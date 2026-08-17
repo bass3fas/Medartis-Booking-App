@@ -18,3 +18,4 @@ export {
   updateBookingAction,
 } from './bookingMutationsAction';
 export { deleteBookingUsageByMrnAction, deleteUsageAction, refillUsageAction, updateUsageAction } from './usageMutationsAction';
+export { fetchHistoryLogsAction, restoreHistoryLogAction } from './historyLogActions';
