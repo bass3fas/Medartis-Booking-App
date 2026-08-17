@@ -190,6 +190,7 @@ export default function EditBookingModal({ booking, isOpen, onClose, onSuccess, 
     formData.set('BookingID', booking.BookingID);
     formData.set('currentUserName', currentUserName || '');
     formData.set('currentUserRole', currentUserRole || '');
+    try { formData.set('currentUserEmail', JSON.parse(localStorage.getItem('medartis_session_token') || '{}').email || ''); } catch {}
   };
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
@@ -207,6 +208,10 @@ export default function EditBookingModal({ booking, isOpen, onClose, onSuccess, 
     startTransition(async () => {
       const result = await updateBookingAction(formData);
       if (result.success) {
+        if (result.notification && 'Notification' in window) {
+          if (Notification.permission === 'granted') new Notification(result.notification);
+          else if (Notification.permission !== 'denied') Notification.requestPermission().then((permission) => { if (permission === 'granted') new Notification(result.notification!); });
+        }
         onSuccess();
         onClose();
         formRef.current?.reset();
@@ -224,6 +229,10 @@ export default function EditBookingModal({ booking, isOpen, onClose, onSuccess, 
     startTransition(async () => {
       const result = await deleteBookingAction(formData);
       if (result.success) {
+        if (result.notification && 'Notification' in window) {
+          if (Notification.permission === 'granted') new Notification(result.notification);
+          else if (Notification.permission !== 'denied') Notification.requestPermission().then((permission) => { if (permission === 'granted') new Notification(result.notification!); });
+        }
         onSuccess();
         onClose();
       } else {

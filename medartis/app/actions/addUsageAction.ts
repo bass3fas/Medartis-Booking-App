@@ -5,6 +5,8 @@ import crypto from 'crypto';
 import { sheets, SPREADSHEET_ID } from '../lib/google-sheets';
 import { uploadPhotoToDrive } from '../lib/googleDrive';
 import type { UsageItemInput } from '../types/interfaces';
+import { writeHistoryLog } from '../lib/history-log';
+import { sendNotificationEmail } from '../lib/email';
 
 // Usage images folder ID from your Google Drive
 const USAGE_IMAGES_FOLDER_ID = '1dAIcVsXX1llgMrqlT12YOtdizskGV5rg';
@@ -57,6 +59,7 @@ export async function addBookingUsageAction(formData: FormData) {
     const bookingId = normalize(formData.get('BookingID'));
     const currentUserName = normalize(formData.get('currentUserName'));
     const currentUserRole = normalize(formData.get('currentUserRole'));
+    const currentUserEmail = normalize(formData.get('currentUserEmail'));
     const patientMRN = normalize(formData.get('PatientMRN'));
     const hospital = normalize(formData.get('Hospital'));
     const date = normalize(formData.get('Date')) || new Date().toISOString().slice(0, 10);
@@ -180,6 +183,14 @@ export async function addBookingUsageAction(formData: FormData) {
         valueInputOption: 'USER_ENTERED',
         requestBody: { values: rows },
       });
+      for (const row of rows) {
+        const usageSnapshot = { UsageID: row[0], BookingID: row[1], SetID: row[2], TrayID: row[3], PartNumber: row[4], QtyUsed: row[6], PatientMRN: row[7], Date: row[8], Hospital: row[9], Notes: row[11], Status: row[17] };
+        await writeHistoryLog({ targetTable: 'Usage', targetRowId: row[0], actionType: 'CREATE', previousData: null, newData: usageSnapshot, actor: { name: currentUserName, email: currentUserEmail, role: currentUserRole } });
+      }
+      const salesCoordinatorEmail = process.env.SALES_COORDINATOR_EMAIL;
+      if (salesCoordinatorEmail && patientMRN) {
+        await sendNotificationEmail({ to: salesCoordinatorEmail, subject: `Usage MRN ${patientMRN} added for booking ${bookingId}`, html: `<p>MRN <strong>${patientMRN}</strong> was added for booking <strong>${bookingId}</strong>.</p><p>Hospital: ${hospital || booking.Hospital || 'N/A'}</p><p>Usage items: ${validUsageItems.length}</p>` });
+      }
     }
 
     return { 
