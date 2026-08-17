@@ -40,7 +40,7 @@ export async function writeHistoryLog({
       actorName,
       actorEmail,
       actorRole,
-      userId: user?.id,
+      ...(user ? { user: { connect: { id: user.id } } } : {}),
     },
   });
 }

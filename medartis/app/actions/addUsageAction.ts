@@ -6,7 +6,7 @@ import { sheets, SPREADSHEET_ID } from '../lib/google-sheets';
 import { uploadPhotoToDrive } from '../lib/googleDrive';
 import type { UsageItemInput } from '../types/interfaces';
 import { writeHistoryLog } from '../lib/history-log';
-import { sendNotificationEmail } from '../lib/email';
+import { escapeHtml, sendNotificationEmail } from '../lib/email';
 
 // Usage images folder ID from your Google Drive
 const USAGE_IMAGES_FOLDER_ID = '1dAIcVsXX1llgMrqlT12YOtdizskGV5rg';
@@ -189,7 +189,7 @@ export async function addBookingUsageAction(formData: FormData) {
       }
       const salesCoordinatorEmail = process.env.SALES_COORDINATOR_EMAIL;
       if (salesCoordinatorEmail && patientMRN) {
-        await sendNotificationEmail({ to: salesCoordinatorEmail, subject: `Usage MRN ${patientMRN} added for booking ${bookingId}`, html: `<p>MRN <strong>${patientMRN}</strong> was added for booking <strong>${bookingId}</strong>.</p><p>Hospital: ${hospital || booking.Hospital || 'N/A'}</p><p>Usage items: ${validUsageItems.length}</p>` });
+        await sendNotificationEmail({ to: salesCoordinatorEmail, subject: `Usage MRN ${patientMRN} added for booking ${bookingId}`, html: `<p>MRN <strong>${escapeHtml(patientMRN)}</strong> was added for booking <strong>${escapeHtml(bookingId)}</strong>.</p><p>Hospital: ${escapeHtml(hospital || booking.Hospital || 'N/A')}</p><p>Usage items: ${validUsageItems.length}</p>` });
       }
     }
 
