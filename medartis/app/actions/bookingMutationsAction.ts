@@ -8,7 +8,7 @@ import { sheets, SPREADSHEET_ID } from '../lib/google-sheets';
 import { prisma } from '../lib/db';
 import type { EnhancedBooking } from '../types/interfaces';
 import { writeHistoryLog } from '../lib/history-log';
-import { escapeHtml, sendNotificationEmail } from '../lib/email';
+import { sendPushNotificationToUser } from '../lib/push-service'; // Update path to match your utility file
 
 const BOOKING_HEADERS = [
   'BookingID',
@@ -225,9 +225,25 @@ export async function updateBookingAction(formData: FormData) {
       requestBody: { values: [nextRow] },
     });
     await writeHistoryLog({ targetTable: 'Bookings', targetRowId: bookingId, actionType: 'UPDATE', previousData: booking, newData: nextBooking, actor: { name: context.currentUserName, email: context.currentUserEmail, role: context.currentUserRole } });
-    if (normalize(booking.Status).toLowerCase() !== 'delivered' && normalize(nextBooking.Status).toLowerCase() === 'delivered') {
-      const creatorEmail = await findSalespersonEmail(nextBooking);
-      await sendNotificationEmail({ to: creatorEmail || process.env.SALES_COORDINATOR_EMAIL || process.env.SMTP_USER || '', subject: `Booking ${bookingId} delivered`, html: `<p>Booking <strong>${escapeHtml(bookingId)}</strong> is now Delivered.</p><p>Salesperson: ${escapeHtml(nextBooking.Salesperson || 'N/A')}</p><p>Hospital: ${escapeHtml(nextBooking.Hospital || 'N/A')}</p>` });
+    // inside updateBookingAction in server action file
+    const isNewlyDelivered =
+      normalize(booking.Status).toLowerCase() !== 'delivered' &&
+      normalize(nextBooking.Status).toLowerCase() === 'delivered';
+
+    if (isNewlyDelivered) {
+      // Option A: If using Server-Sent Events / WebSockets / Web Push API:
+      const salespersonUser = await prisma.user.findFirst({
+        where: { name: { equals: nextBooking.Salesperson, mode: 'insensitive' } },
+      });
+
+      if (salespersonUser) {
+        await sendPushNotificationToUser(
+          salespersonUser.id,
+          `Booking Delivered!`,
+          `Booking ${bookingId} for ${nextBooking.Hospital} has been marked as Delivered.`,
+          `/bookings/${bookingId}`
+        );
+      }
     }
     return { success: true, message: `Booking ${bookingId} updated successfully.`, notification: normalize(nextBooking.Status).toLowerCase() === 'delivered' ? `Booking ${bookingId} is Delivered.` : undefined };
   } catch (error: unknown) {

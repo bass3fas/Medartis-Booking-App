@@ -31,7 +31,7 @@ export async function sendNotificationEmail({ to, subject, html }: EmailPayload)
 
   try {
     const info = await transporter.sendMail({
-      from: `"Medartis Engine" <${process.env.SMTP_USER}>`,
+      from: `"Medartis Booking App" <${process.env.SMTP_USER}>`,
       to: recipient,
       subject,
       html,
