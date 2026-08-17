@@ -5,9 +5,10 @@ import { google } from 'googleapis';
 import { z } from 'zod';
 import { uploadPhotoToDrive, deletePhotoFromDrive } from '../lib/googleDrive';
 import { sheets, SPREADSHEET_ID } from '../lib/google-sheets';
+import { prisma } from '../lib/db';
 import type { EnhancedBooking } from '../types/interfaces';
 import { writeHistoryLog } from '../lib/history-log';
-import { sendNotificationEmail } from '../lib/email';
+import { escapeHtml, sendNotificationEmail } from '../lib/email';
 
 const BOOKING_HEADERS = [
   'BookingID',
@@ -49,6 +50,24 @@ function canUpdateBooking(booking: Record<string, string>, context: MutationCont
   if (role === 'admin' || role === 'warehouse') return true;
   if (role === 'sales') return normalize(booking.Salesperson).toLowerCase() === normalize(context.currentUserName).toLowerCase();
   return false;
+}
+
+
+async function findSalespersonEmail(booking: Record<string, string>): Promise<string> {
+  const sheetEmail = normalize(booking['Sales Email']);
+  if (sheetEmail) return sheetEmail;
+
+  const salesperson = normalize(booking.Salesperson).toLowerCase();
+  if (!salesperson) return '';
+
+  const user = await prisma.user.findFirst({
+    where: {
+      name: { equals: salesperson, mode: 'insensitive' },
+      role: { equals: 'sales', mode: 'insensitive' },
+    },
+    select: { email: true },
+  });
+  return user?.email || '';
 }
 
 function allowedFieldsForRole(context: MutationContext): Set<string> {
@@ -207,7 +226,8 @@ export async function updateBookingAction(formData: FormData) {
     });
     await writeHistoryLog({ targetTable: 'Bookings', targetRowId: bookingId, actionType: 'UPDATE', previousData: booking, newData: nextBooking, actor: { name: context.currentUserName, email: context.currentUserEmail, role: context.currentUserRole } });
     if (normalize(booking.Status).toLowerCase() !== 'delivered' && normalize(nextBooking.Status).toLowerCase() === 'delivered') {
-      await sendNotificationEmail({ to: process.env.WAREHOUSE_EMAIL || process.env.SMTP_USER || '', subject: `Booking ${bookingId} delivered`, html: `<p>Booking <strong>${bookingId}</strong> is now Delivered.</p><p>Salesperson: ${nextBooking.Salesperson || 'N/A'}</p><p>Hospital: ${nextBooking.Hospital || 'N/A'}</p>` });
+      const creatorEmail = await findSalespersonEmail(nextBooking);
+      await sendNotificationEmail({ to: creatorEmail || process.env.SALES_COORDINATOR_EMAIL || process.env.SMTP_USER || '', subject: `Booking ${bookingId} delivered`, html: `<p>Booking <strong>${escapeHtml(bookingId)}</strong> is now Delivered.</p><p>Salesperson: ${escapeHtml(nextBooking.Salesperson || 'N/A')}</p><p>Hospital: ${escapeHtml(nextBooking.Hospital || 'N/A')}</p>` });
     }
     return { success: true, message: `Booking ${bookingId} updated successfully.`, notification: normalize(nextBooking.Status).toLowerCase() === 'delivered' ? `Booking ${bookingId} is Delivered.` : undefined };
   } catch (error: unknown) {

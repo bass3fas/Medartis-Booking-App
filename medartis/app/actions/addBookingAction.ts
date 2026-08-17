@@ -5,7 +5,7 @@ import { sheets, SPREADSHEET_ID } from '../lib/google-sheets';
 import { z } from 'zod';
 import crypto from 'crypto';
 import { writeHistoryLog } from '../lib/history-log';
-import { sendNotificationEmail } from '../lib/email';
+import { escapeHtml, sendNotificationEmail } from '../lib/email';
 
 // 1. Precise Validation Schema matching your field structures
 const AddBookingSchema = z.object({
@@ -127,7 +127,7 @@ export async function addBookingAction(formData: FormData) {
       await sendNotificationEmail({
         to: warehouseEmail,
         subject: `New booking ${newBookingID} created`,
-        html: `<h2>New Booking ${newBookingID}</h2><p><strong>Salesperson:</strong> ${data.Salesperson}</p><p><strong>Hospital:</strong> ${data.Hospital}</p><p><strong>Doctor:</strong> ${data.Doctor}</p><p><strong>Case:</strong> ${data.CaseDate} ${data.CaseTime}</p><p><strong>Deliver Before:</strong> ${deliverBefore || 'N/A'}</p><p><strong>Requested Sets:</strong> ${data['Requested Sets'] || 'N/A'}</p><p><strong>Special Request:</strong> ${data.SpecialRequest || 'N/A'}</p>`,
+        html: `<h2>New Booking ${escapeHtml(newBookingID)}</h2><p><strong>Salesperson:</strong> ${escapeHtml(data.Salesperson)}</p><p><strong>Hospital:</strong> ${escapeHtml(data.Hospital)}</p><p><strong>Doctor:</strong> ${escapeHtml(data.Doctor)}</p><p><strong>Case:</strong> ${escapeHtml(data.CaseDate)} ${escapeHtml(data.CaseTime)}</p><p><strong>Deliver Before:</strong> ${escapeHtml(deliverBefore || 'N/A')}</p><p><strong>Requested Sets:</strong> ${escapeHtml(data['Requested Sets'] || 'N/A')}</p><p><strong>Special Request:</strong> ${escapeHtml(data.SpecialRequest || 'N/A')}</p>`,
       });
     }
 
