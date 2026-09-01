@@ -144,11 +144,11 @@ export default function AddBookingModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-3xl overflow-hidden rounded-[30px] border border-base-300 bg-base-100 shadow-2xl">
+      <div className="booking-dialog w-full max-w-3xl overflow-hidden rounded-[30px] border border-base-300 bg-base-100 shadow-2xl">
         <form ref={formRef} onSubmit={handleSubmit}>
           
           {/* Modal Header */}
-          <div className="border-b border-base-200 bg-gradient-to-r from-base-100 to-base-200/70 px-6 py-5">
+          <div className="booking-dialog__header border-b border-base-200 bg-gradient-to-r from-base-100 to-base-200/70 px-6 py-5">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-primary">
@@ -165,7 +165,7 @@ export default function AddBookingModal({
           </div>
 
           {/* Modal Scrollable Container Body */}
-          <div className="max-h-[75vh] overflow-y-auto px-6 py-6">
+          <div className="booking-dialog__content max-h-[75vh] overflow-y-auto px-6 py-6">
             {error && (
               <div className="alert alert-error mb-5 text-xs font-semibold text-error-content">
                 <span>{error}</span>

@@ -4,7 +4,14 @@
 import { prisma } from '@/app/lib/db';
 import bcrypt from 'bcryptjs';
 
-export async function handleDatabaseAuth(formData: any) {
+interface AuthFormData {
+  action: 'signup' | 'signin';
+  email: string;
+  password: string;
+  name?: string;
+}
+
+export async function handleDatabaseAuth(formData: AuthFormData) {
   const { action, email, password, name } = formData;
 
   try {
@@ -32,9 +39,9 @@ export async function handleDatabaseAuth(formData: any) {
       });
 
       // Return user data (excluding password)
-      return { 
-        success: true, 
-        user: { email: newUser.email, name: newUser.name, role: newUser.role } 
+      return {
+        success: true,
+        user: { id: newUser.id, email: newUser.email, name: newUser.name, role: newUser.role }
       };
 
     } else if (action === 'signin') {
@@ -55,19 +62,21 @@ export async function handleDatabaseAuth(formData: any) {
       }
 
       // 3. Return the full verified user details securely
-      return { 
-        success: true, 
-        user: { 
-          email: user.email, 
-          name: user.name || 'Staff Member', 
-          role: user.role 
-        } 
+      return {
+        success: true,
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name || 'Staff Member',
+          role: user.role
+        }
       };
     }
 
     return { success: false, error: 'Unknown action type.' };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Database Auth Error:', error);
-    return { success: false, error: 'Database connection failed: ' + error.message };
+    const message = error instanceof Error ? error.message : 'Unknown database error';
+    return { success: false, error: 'Database connection failed: ' + message };
   }
 }

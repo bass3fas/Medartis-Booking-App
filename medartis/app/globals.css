@@ -54,3 +54,22 @@
     overflow-x: visible !important;
   }
 }
+
+/* Keep dialog content reachable on narrow phones and avoid viewport-width overflow. */
+@media (max-width: 640px) {
+  .booking-dialog {
+    max-height: calc(100dvh - 1rem);
+    border-radius: 1.25rem;
+  }
+
+  .booking-dialog__content {
+    max-height: calc(100dvh - 10rem);
+    padding: 1rem;
+  }
+
+  .booking-dialog__header,
+  .booking-dialog__footer {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+}
