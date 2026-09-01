@@ -233,3 +233,23 @@ export interface BookingSetOption {
   computedStatus?: string;
   LoanType?: string;
 }
+
+/** Browser Push API fields persisted for the signed-in user. */
+export interface BrowserPushSubscription {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+}
+
+export interface PushSubscriptionRequest {
+  userId: string;
+  subscription: BrowserPushSubscription;
+}
+
+/** The client-side session shape shared by authentication and notification components. */
+export interface StoredSession {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  expiresAt: number;
+}

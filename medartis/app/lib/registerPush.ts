@@ -1,55 +1,32 @@
-// app/lib/registerPush.ts
+import type { StoredSession } from '../types/interfaces';
 
-function urlBase64ToUint8Array(base64String: string) {
-  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+function urlBase64ToUint8Array(value: string): ArrayBuffer {
+  const padding = '='.repeat((4 - (value.length % 4)) % 4);
+  const base64 = (value + padding).replace(/-/g, '+').replace(/_/g, '/');
   const rawData = window.atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
-  for (let i = 0; i < rawData.length; ++i) {
-    outputArray[i] = rawData.charCodeAt(i);
-  }
-  return outputArray;
+  const bytes = Uint8Array.from(rawData, (character) => character.charCodeAt(0));
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }
 
-export async function subscribeUserToPush(userId: string) {
-  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-    console.warn('Push messaging is not supported in this browser.');
-    return;
-  }
-
-  // Request notification permission
-  const permission = await Notification.requestPermission();
-  if (permission !== 'granted') {
-    console.warn('Notification permission denied by user.');
-    return;
-  }
-
-  // Ensure Service Worker is registered
-  const registration = await navigator.serviceWorker.register('/sw.js');
-  await navigator.serviceWorker.ready;
+/** Requests permission from a signed-in user and stores this device's subscription. */
+export async function subscribeUserToPush(session: StoredSession): Promise<'subscribed' | 'denied' | 'unsupported' | 'failed'> {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !session.id) return 'unsupported';
+  if (await Notification.requestPermission() !== 'granted') return 'denied';
 
   const publicVapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-  if (!publicVapidKey) {
-    console.error('NEXT_PUBLIC_VAPID_PUBLIC_KEY is not defined in environment variables.');
-    return;
-  }
+  if (!publicVapidKey) return 'failed';
 
-  // Subscribe using PushManager
-  const subscription = await registration.pushManager.subscribe({
-    userVisibleOnly: true,
-    applicationServerKey: urlBase64ToUint8Array(publicVapidKey),
-  });
-
-  // Save to database
-  const res = await fetch('/api/save-subscription', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId, subscription }),
-  });
-
-  if (res.ok) {
-    console.log('Push subscription successfully stored in database.');
-  } else {
-    console.error('Failed to store push subscription in DB.');
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription()
+      ?? await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(publicVapidKey) });
+    const response = await fetch('/api/save-subscription', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: session.id, subscription }),
+    });
+    return response.ok ? 'subscribed' : 'failed';
+  } catch (error) {
+    console.error('Unable to subscribe this device to push notifications:', error);
+    return 'failed';
   }
 }

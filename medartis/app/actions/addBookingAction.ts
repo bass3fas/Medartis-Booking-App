@@ -6,6 +6,7 @@ import { z } from 'zod';
 import crypto from 'crypto';
 import { writeHistoryLog } from '../lib/history-log';
 import { escapeHtml, sendNotificationEmail } from '../lib/email';
+import { sendPushNotificationToWarehouse } from '../lib/push-service';
 
 // 1. Precise Validation Schema matching your field structures
 const AddBookingSchema = z.object({
@@ -121,6 +122,13 @@ export async function addBookingAction(formData: FormData) {
       'UsagePhoto', 'UsagePhoto2', 'Patient MRN', 'Delivery Note', 'Delivery Note Link', 'Type'
     ].map((header, index) => [header, newRow[index] ?? '']));
     await writeHistoryLog({ targetTable: 'Bookings', targetRowId: newBookingID, actionType: 'CREATE', previousData: null, newData: bookingSnapshot, actor: { name: data.currentUserName, email: data.currentUserEmail, role: data.currentUserRole } });
+
+    // Warehouse staff receive push on every subscribed browser or installed PWA.
+    await sendPushNotificationToWarehouse(
+      'New booking created',
+      `Booking ${newBookingID} for ${data.Hospital} was created by ${data.Salesperson}.`,
+      '/bookings'
+    );
 
     const warehouseEmail = process.env.WAREHOUSE_EMAIL;
     if (warehouseEmail) {

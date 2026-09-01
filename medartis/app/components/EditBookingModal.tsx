@@ -243,9 +243,9 @@ export default function EditBookingModal({ booking, isOpen, onClose, onSuccess, 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-5xl overflow-hidden rounded-[30px] border border-base-300 bg-base-100 shadow-2xl">
+      <div className="booking-dialog w-full max-w-5xl overflow-hidden rounded-[30px] border border-base-300 bg-base-100 shadow-2xl">
         <form ref={formRef} onSubmit={handleSubmit}>
-          <div className="border-b border-base-200 bg-gradient-to-r from-base-100 to-base-200/70 px-6 py-5">
+          <div className="booking-dialog__header border-b border-base-200 bg-gradient-to-r from-base-100 to-base-200/70 px-6 py-5">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className="badge badge-primary badge-outline font-mono uppercase tracking-widest">Edit booking</div>
@@ -255,7 +255,7 @@ export default function EditBookingModal({ booking, isOpen, onClose, onSuccess, 
               <button type="button" onClick={onClose} className="btn btn-ghost btn-sm rounded-full" aria-label="Close dialog">✕</button>
             </div>
           </div>
-          <div className="max-h-[75vh] overflow-y-auto px-6 py-6">
+          <div className="booking-dialog__content max-h-[75vh] overflow-y-auto px-6 py-6">
             {error && <div className="alert alert-error mb-5 text-xs font-semibold text-error-content"><span>{error}</span></div>}
             <input type="hidden" name="BookingID" value={booking.BookingID} />
             <div className="grid gap-5 lg:grid-cols-2">
@@ -267,7 +267,7 @@ export default function EditBookingModal({ booking, isOpen, onClose, onSuccess, 
               <section className="rounded-2xl border border-base-200 bg-base-50 p-4"><h3 className="mb-4 text-sm font-bold">Patient and notes</h3><div className="grid gap-4 sm:grid-cols-2"><label className="form-control sm:col-span-2"><span className="label-text pb-1 text-xs font-semibold">Patient MRN(s)</span><input name="Patient MRN" className="input input-bordered input-sm" defaultValue={booking['Patient MRN'] || ''} placeholder="Separate multiple MRNs with commas" disabled={!canEditFullForm} /></label><label className="form-control"><span className="label-text pb-1 text-xs font-semibold">Delivery Note</span><input name="Delivery Note" className="input input-bordered input-sm" defaultValue={booking['Delivery Note'] || ''} disabled={!canEditFullForm} /></label><label className="form-control"><span className="label-text pb-1 text-xs font-semibold">Delivery Note Link</span><input name="Delivery Note Link" className="input input-bordered input-sm" defaultValue={booking['Delivery Note Link'] || ''} disabled={!canEditFullForm} /></label><label className="form-control sm:col-span-2"><span className="label-text pb-1 text-xs font-semibold">Special Request</span><textarea name="Special Request" className="textarea textarea-bordered min-h-24" defaultValue={booking['Special Request'] || ''} disabled={!canEditFullForm} /></label></div></section>
             </div>
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-base-200 bg-base-100/90 px-6 py-4"><button type="button" onClick={handleDelete} className="btn btn-sm btn-error btn-outline rounded-xl font-bold" disabled={!canDelete || isPending}>Delete Booking</button><div className="flex gap-3"><button type="button" onClick={onClose} className="btn btn-sm btn-ghost rounded-xl font-bold" disabled={isPending}>Cancel</button><button type="submit" className="btn btn-sm btn-primary rounded-xl px-5 font-bold" disabled={isPending}>{isPending ? <span className="loading loading-spinner loading-xs"></span> : 'Update Booking'}</button></div></div>
+          <div className="booking-dialog__footer flex flex-wrap items-center justify-between gap-3 border-t border-base-200 bg-base-100/90 px-6 py-4"><button type="button" onClick={handleDelete} className="btn btn-sm btn-error btn-outline rounded-xl font-bold" disabled={!canDelete || isPending}>Delete Booking</button><div className="flex gap-3"><button type="button" onClick={onClose} className="btn btn-sm btn-ghost rounded-xl font-bold" disabled={isPending}>Cancel</button><button type="submit" className="btn btn-sm btn-primary rounded-xl px-5 font-bold" disabled={isPending}>{isPending ? <span className="loading loading-spinner loading-xs"></span> : 'Update Booking'}</button></div></div>
         </form>
       </div>
     </div>

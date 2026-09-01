@@ -6,6 +6,7 @@ import SidebarNav from "./components/SidebarNav";
 import BottomNav from "./components/BottomNav";
 import WelcomeScreen from "./components/WelcomeScreen";
 import QueryProvider from "./components/providers/QueryProvider";
+import PushNotificationPrompt from "./components/PushNotificationPrompt";
 
 export default function RootLayout({
   children,
@@ -17,6 +18,7 @@ export default function RootLayout({
         <body className="antialiased bg-base-200 min-h-screen text-base-content">
           <QueryProvider>
             <PWA />
+            <PushNotificationPrompt />
             {/* 🔐 Full-screen security block layer wrapper */}
             <WelcomeScreen />
 

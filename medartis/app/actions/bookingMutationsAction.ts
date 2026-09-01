@@ -8,7 +8,7 @@ import { sheets, SPREADSHEET_ID } from '../lib/google-sheets';
 import { prisma } from '../lib/db';
 import type { EnhancedBooking } from '../types/interfaces';
 import { writeHistoryLog } from '../lib/history-log';
-import { sendPushNotificationToUser } from '../lib/push-service'; // Update path to match your utility file
+import { sendPushNotificationToUser } from '../lib/push-service';
 
 const BOOKING_HEADERS = [
   'BookingID',
@@ -52,23 +52,6 @@ function canUpdateBooking(booking: Record<string, string>, context: MutationCont
   return false;
 }
 
-
-async function findSalespersonEmail(booking: Record<string, string>): Promise<string> {
-  const sheetEmail = normalize(booking['Sales Email']);
-  if (sheetEmail) return sheetEmail;
-
-  const salesperson = normalize(booking.Salesperson).toLowerCase();
-  if (!salesperson) return '';
-
-  const user = await prisma.user.findFirst({
-    where: {
-      name: { equals: salesperson, mode: 'insensitive' },
-      role: { equals: 'sales', mode: 'insensitive' },
-    },
-    select: { email: true },
-  });
-  return user?.email || '';
-}
 
 function allowedFieldsForRole(context: MutationContext): Set<string> {
   const role = normalizeRole(context.currentUserRole);
@@ -225,23 +208,20 @@ export async function updateBookingAction(formData: FormData) {
       requestBody: { values: [nextRow] },
     });
     await writeHistoryLog({ targetTable: 'Bookings', targetRowId: bookingId, actionType: 'UPDATE', previousData: booking, newData: nextBooking, actor: { name: context.currentUserName, email: context.currentUserEmail, role: context.currentUserRole } });
-    // inside updateBookingAction in server action file
-    const isNewlyDelivered =
-      normalize(booking.Status).toLowerCase() !== 'delivered' &&
-      normalize(nextBooking.Status).toLowerCase() === 'delivered';
-
-    if (isNewlyDelivered) {
-      // Option A: If using Server-Sent Events / WebSockets / Web Push API:
+    // Notify the booking owner only when the status newly enters a requested milestone.
+    const previousStatus = normalize(booking.Status).toLowerCase();
+    const nextStatus = normalize(nextBooking.Status).toLowerCase();
+    if (previousStatus !== nextStatus && ['confirmed', 'delivered'].includes(nextStatus)) {
       const salespersonUser = await prisma.user.findFirst({
         where: { name: { equals: nextBooking.Salesperson, mode: 'insensitive' } },
+        select: { id: true },
       });
-
       if (salespersonUser) {
         await sendPushNotificationToUser(
           salespersonUser.id,
-          `Booking Delivered!`,
-          `Booking ${bookingId} for ${nextBooking.Hospital} has been marked as Delivered.`,
-          `/bookings/${bookingId}`
+          `Booking ${nextStatus}`,
+          `Booking ${bookingId} for ${nextBooking.Hospital} has been marked as ${nextStatus}.`,
+          '/bookings'
         );
       }
     }

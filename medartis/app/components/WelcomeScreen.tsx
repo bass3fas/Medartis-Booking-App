@@ -70,6 +70,7 @@ export default function WelcomeScreen() {
     localStorage.setItem(
       'medartis_session_token', 
       JSON.stringify({ 
+        id: result.user?.id,
         user: result.user?.email, 
         email: result.user?.email,
         name: result.user?.name, 
